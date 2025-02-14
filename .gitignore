@@ -8,3 +8,6 @@ prerequisites/
 
 # OSX
 .DS_Store
+
+tables/
+test_outputs/

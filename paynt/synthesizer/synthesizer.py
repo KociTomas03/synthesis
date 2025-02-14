@@ -1,3 +1,4 @@
+import re
 import paynt.synthesizer.statistic
 import paynt.utils.timer
 
@@ -81,6 +82,36 @@ class Synthesizer:
         self.explored = None
         self.best_assignment = None
         self.best_assignment_value = None
+        # deciding upon memory constraint
+        self.memory_constraintfunc = None
+        memory_constraint = paynt.cli.memory_constraint 
+        if (memory_constraint is not None):
+            if(memory_constraint == "circular"):
+                self.memory_constraintfunc = simpleCircle
+            elif(memory_constraint == "bothway"):
+                self.memory_constraintfunc = bothWayCircle
+            elif(memory_constraint == "bothWayCircleSelfLoop"):
+                self.memory_constraintfunc = bothWayCircleSelfLoop
+            elif(memory_constraint == "growing"):
+                self.memory_constraintfunc = growing
+            elif (memory_constraint == "notDecreasing"):
+                self.memory_constraintfunc = notDecreasing
+            elif (memory_constraint == "onestep"):
+                self.memory_constraintfunc = oneStep
+            elif (memory_constraint == "evenUpOddDown"):
+                self.memory_constraintfunc = evenUpOddDown
+            elif (memory_constraint == "notDecreasingCyclic"):
+                self.memory_constraintfunc = notDecreasingCyclic
+            elif (memory_constraint == "growingMax2"):
+                self.memory_constraintfunc = growingMax2
+            elif (memory_constraint == "notDecreasingMax2"):
+                self.memory_constraintfunc = notDecreasingMax2
+            elif (memory_constraint == "binaryTree"):
+                self.memory_constraintfunc = binaryTree
+            elif (memory_constraint == "binaryTreeSelfLoop"):
+                self.memory_constraintfunc = binaryTreeSelfLoop
+            elif (memory_constraint == "binaryTreeCyclic"):
+                self.memory_constraintfunc = binaryTreeCyclic
 
     @property
     def method_name(self):
@@ -157,7 +188,7 @@ class Synthesizer:
         pass
 
     def synthesize(
-        self, family=None, optimum_threshold=None, keep_optimum=False, return_all=False, print_stats=True, timeout=None
+        self, family=None, optimum_threshold=None, keep_optimum=False, return_all=False, print_stats=True, timeout=None, memory_constraint="none", generated_fsc_route=None
     ):
         '''
         :param family family of assignment to search in
@@ -175,10 +206,13 @@ class Synthesizer:
             family.constraint_indices = list(range(len(self.quotient.specification.constraints)))
 
         self.set_optimality_threshold(optimum_threshold)
-        self.synthesis_timer = paynt.utils.timer.Timer(timeout)
+        self.synthesis_timer = paynt.utils.timer.Timer(900) # 15 minutes   
         self.synthesis_timer.start()
         self.stat = paynt.synthesizer.statistic.Statistic(self)
         self.explored = 0
+        #consraining the family
+        if memory_constraint != "none":
+            family = self.get_memory_restrained_family(family)
         self.stat.start(family)
         self.synthesize_one(family)
         if self.best_assignment is not None and self.best_assignment.size > 1 and not return_all:
@@ -192,6 +226,8 @@ class Synthesizer:
             dtmc = self.quotient.build_assignment(self.best_assignment)
             result = dtmc.check_specification(self.quotient.specification)
             logger.info(f"double-checking specification satisfiability: {result}")
+            if(generated_fsc_route is not None):
+                self.best_assignment.toGraph(generated_fsc_route)
 
         if print_stats:
             self.stat.print()
@@ -205,5 +241,140 @@ class Synthesizer:
         return assignment
 
 
-    def run(self, optimum_threshold=None):
-        return self.synthesize(optimum_threshold=optimum_threshold)
+    def run(self, optimum_threshold=None, memory_constraint="none", generated_fsc_route=None):
+        return self.synthesize(optimum_threshold=optimum_threshold, memory_constraint=memory_constraint, generated_fsc_route=generated_fsc_route)
+
+    def get_memory_restrained_family(self, family):
+        restricted_family = family.copy()
+
+
+        for hole in range(len(restricted_family.hole_to_name)):
+            if(get_current_type(restricted_family.hole_to_name[hole]) == "M"):
+                if(self.memory_constraintfunc):
+                    restricted_family.hole_set_options(hole,self.memory_constraintfunc(restricted_family.hole_to_name[hole], restricted_family.hole_options(hole), paynt.quotient.pomdp.PomdpQuotient.initial_memory_size -1))
+        # onto something
+        return restricted_family
+
+
+def get_current_memory(name):
+    return int(re.findall(r"[AM]{1,2}\(\[.*\],(\d+)\)", name)[0])
+
+def get_current_observation(name):
+    return re.findall(r"[AM]{1,2}\(\[(.*)],\d+\)", name)[-1]
+
+def get_current_type(name):
+    return re.findall(r"([AM]{1,2})", name)[0]
+
+def get_current_value(name):
+    return re.findall(r".*\)=(.*)", name)
+
+
+def oneStep(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    return [i for i, label in enumerate(option_labels) 
+            if int(label) == current + 1 or int(label) == current - 1]
+
+def simpleCircle(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) == current + 1]
+    if not indices:
+        indices = [i for i, label in enumerate(option_labels) if label == "0" or label == 0]
+    return indices
+
+def bothWayCircle(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) == current + 1 or int(label) == current - 1]
+    if len(indices) == 1:
+        if current == 0:
+            indices.extend([i for i, label in enumerate(option_labels) 
+                          if int(label) == max_memory])
+        else:
+            indices.extend([i for i, label in enumerate(option_labels) 
+                          if label == "0" or label == 0])
+    return indices
+
+def bothWayCircleSelfLoop(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) == current + 1 or int(label) == current - 1 or int(label) == current]
+    if len(indices) == 2:
+        if current == 0:
+            indices.extend([i for i, label in enumerate(option_labels) 
+                          if int(label) == max_memory])
+        else:
+            indices.extend([i for i, label in enumerate(option_labels) 
+                          if label == "0" or label == 0])
+    return indices
+
+def notDecreasingCyclic(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) >= current]
+    if current == max_memory:
+        indices.extend([i for i, label in enumerate(option_labels) 
+                      if label == "0" or label == 0])
+    return indices
+
+def growing(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) > current]
+    if not indices:
+        indices = [i for i, label in enumerate(option_labels) 
+                  if int(label) == current]
+    return indices
+
+def notDecreasing(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    return [i for i, label in enumerate(option_labels) 
+            if int(label) >= current]
+
+def evenUpOddDown(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    if current % 2 == 1:
+        return [i for i, label in enumerate(option_labels) 
+                if int(label) <= current]
+    return [i for i, label in enumerate(option_labels) 
+            if int(label) >= current]
+
+def growingMax2(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label)-2 == current or int(label)-1 == current]
+    if not indices:
+        indices = [i for i, label in enumerate(option_labels) 
+                  if int(label) == current]
+    return indices
+
+def notDecreasingMax2(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    return [i for i, label in enumerate(option_labels) 
+            if int(label) >= current and int(label) <= current+2]
+
+def binaryTree(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) == (2 * current + 1) or int(label) == (2 * current + 2)]
+    if not indices:
+        indices = [i for i, label in enumerate(option_labels) 
+                  if int(label) == current]
+    return indices
+
+def binaryTreeSelfLoop(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    return [i for i, label in enumerate(option_labels) 
+            if int(label) == (2 * current + 1) or 
+               int(label) == (2 * current + 2) or 
+               int(label) == current]
+
+def binaryTreeCyclic(name, option_labels, max_memory):
+    current = get_current_memory(name)
+    indices = [i for i, label in enumerate(option_labels) 
+              if int(label) == (2 * current + 1) or 
+                 int(label) == (2 * current + 2)]
+    if not indices:
+        indices = [i for i, label in enumerate(option_labels) 
+                  if label == "0" or label == 0]
+    return indices

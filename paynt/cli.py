@@ -136,6 +136,12 @@ def setup_logger(log_path = None):
 )
 @click.option("--profiling", is_flag=True, default=False,
     help="run profiling")
+@click.option("--memory-constraint", type=click.Choice(["none","circular", "growing", "bothway", "onestep",
+"evenUpOddDown", "bothWayCircleSelfLoop", "notDecreasing", "notDecreasingCyclic", "growingMax2", "notDecreasingMax2", "binaryTree", "binaryTreeSelfLoop", "binaryTreeCyclic"]), default="none", show_default=True,
+    help="maximum number of memory holes to be added to the design space")
+@click.option(
+    "--generated-fsc-route", type=click.STRING, help="Route to save generated FSCs to",
+)
 
 def paynt_run(
     project, sketch, props, relative_error, optimum_threshold, precision, timeout,
@@ -150,7 +156,9 @@ def paynt_run(
     tree_depth, tree_enumeration, tree_map_scheduler, add_dont_care_action,
     constraint_bound,
     ce_generator,
-    profiling
+    profiling,
+    memory_constraint,
+    generated_fsc_route,
 ):
 
     profiler = None
@@ -169,6 +177,8 @@ def paynt_run(
     paynt.quotient.pomdp.PomdpQuotient.posterior_aware = posterior_aware
     paynt.quotient.decpomdp.DecPomdpQuotient.initial_memory_size = fsc_memory_size
     paynt.quotient.posmg.PosmgQuotient.initial_memory_size = fsc_memory_size
+    
+    paynt.cli.memory_constraint = memory_constraint
 
     paynt.synthesizer.policy_tree.SynthesizerPolicyTree.discard_unreachable_choices = mdp_discard_unreachable_choices
 
@@ -189,7 +199,7 @@ def paynt_run(
     properties_path = os.path.join(project, props)
     quotient = paynt.parser.sketch.Sketch.load_sketch(sketch_path, properties_path, export, relative_error, precision, constraint_bound)
     synthesizer = paynt.synthesizer.synthesizer.Synthesizer.choose_synthesizer(quotient, method, fsc_synthesis, storm_control)
-    synthesizer.run(optimum_threshold)
+    synthesizer.run(optimum_threshold, memory_constraint, generated_fsc_route)
 
     if profiling:
         profiler.disable()
