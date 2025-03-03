@@ -260,10 +260,10 @@ class Family:
 
 ############################# UTIL FUNCTIONS ####################################
 def get_current_memory(name):
-    return int(re.findall(r"[AM]{1,2}\(\[.*\],(\d+)\)", name)[0])
+    return int(re.findall(r"[AM]{1,2}\(.*,(\d+)\)", name)[0])
 
 def get_current_observation(name):
-    return re.findall(r"[AM]{1,2}\(\[(.*)],\d+\)", name)[-1]
+    return re.findall(r"[AM]{1,2}\((.*),\d+\)", name)[-1]
 
 def get_current_type(name):
     return re.findall(r"([AM]{1,2})", name)[0]

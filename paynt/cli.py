@@ -166,6 +166,7 @@ def paynt_run(
         profiler = cProfile.Profile()
         profiler.enable()
     paynt.utils.timer.GlobalTimer.start(timeout)
+    
 
     logger.info("This is Paynt version {}.".format(version()))
     paynt.utils.version_check.check_stormpy_compatibility()
@@ -180,6 +181,7 @@ def paynt_run(
     paynt.quotient.posmg.PosmgQuotient.initial_memory_size = fsc_memory_size
     
     paynt.cli.memory_constraint = memory_constraint
+    paynt.cli.generated_fsc_route = generated_fsc_route
 
     paynt.quotient.mdp_family.MdpFamilyQuotient.initial_memory_size = fsc_memory_size
 
@@ -202,7 +204,7 @@ def paynt_run(
     properties_path = os.path.join(project, props)
     quotient = paynt.parser.sketch.Sketch.load_sketch(sketch_path, properties_path, export, relative_error, precision, constraint_bound, exact)
     synthesizer = paynt.synthesizer.synthesizer.Synthesizer.choose_synthesizer(quotient, method, fsc_synthesis, storm_control)
-    synthesizer.run(optimum_threshold, memory_constraint, generated_fsc_route)
+    synthesizer.run(optimum_threshold)
 
     if profiling:
         profiler.disable()

@@ -256,7 +256,8 @@ class SynthesizerPomdp:
         mem_size = paynt.quotient.pomdp.PomdpQuotient.initial_memory_size
         opt = self.quotient.specification.optimality.optimum
         while True:
-
+            if( paynt.utils.timer.GlobalTimer.time_limit_reached() == True ):
+                break
             logger.info("Synthesizing optimal k={} controller ...".format(mem_size) )
             if unfold_imperfect_only:
                 self.quotient.set_imperfect_memory_size(mem_size)
