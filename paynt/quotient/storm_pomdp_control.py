@@ -25,6 +25,8 @@ class StormPOMDPControl:
         )
         self.storm_bounds = None  # under-approximation value from Storm
 
+        self.saynt_fsc = None  # holds the FSC synthesized using SAYNT
+
         # PAYNT data and FSC export
         self.latest_paynt_result = None  # holds the synthesised assignment
         self.latest_paynt_result_fsc = None  # holds the FSC built from assignment
@@ -61,8 +63,6 @@ class StormPOMDPControl:
         self.s_queue = None
 
         self.saynt_timer = None
-        self.export_fsc_storm = None
-        self.export_fsc_paynt = None
 
     def set_options(
         self,
@@ -84,8 +84,6 @@ class StormPOMDPControl:
             )
         self.use_cutoffs = use_storm_cutoffs
         self.unfold_strategy_storm = unfold_strategy_storm
-        self.export_fsc_storm = export_fsc_storm
-        self.export_fsc_paynt = export_fsc_paynt
 
         self.incomplete_exploration = False
         if prune_storm:
@@ -99,9 +97,9 @@ class StormPOMDPControl:
             self.unfold_cutoff = True
 
     def get_storm_result(self):
-        self.run_storm_analysis(self)
+        self.run_storm_analysis()
         self.parse_results(self.quotient)
-        self.update_data(self)
+        self.update_data()
 
         if self.s_queue is not None:
             self.s_queue.put((self.result_dict, self.storm_bounds))
@@ -112,6 +110,13 @@ class StormPOMDPControl:
             self.storm_bounds = self.latest_storm_result.upper_bound
         else:
             self.storm_bounds = self.latest_storm_result.lower_bound
+
+        if (self.storm_control.iteration_timeout is not None) or (
+            self.storm_control.get_result is not None
+        ):
+            self.saynt_fsc = self.belief_controller_to_fsc(
+                self.latest_storm_result, self.latest_paynt_result_fsc
+            )
 
     # run Storm POMDP analysis for given model and specification
     # TODO: discuss Storm options
@@ -795,7 +800,7 @@ class StormPOMDPControl:
         action = actions[0]
         for label in belief_mc.labeling.get_labels_of_state(init_belief_state):
             succ_observation = None
-            fsc_switch = False
+            fsc_switch = None
             cutoff_switch = None
             for label in belief_mc.labeling.get_labels_of_state(init_belief_state):
                 if "[" in label:
@@ -938,9 +943,8 @@ class StormPOMDPControl:
                         len(actions) == 1
                     ), "Belief MC has multiple labels for one action"
                     action = actions[0]
-
                     succ_observation = None
-                    fsc_switch = False
+                    fsc_switch = None
                     cutoff_switch = None
                     for label in belief_mc.labeling.get_labels_of_state(succ):
                         if "[" in label:
