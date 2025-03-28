@@ -1,4 +1,6 @@
 import paynt.quotient.mdp_family
+import pickle
+from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
 from . import version
 
 import paynt.utils.timer
@@ -393,7 +395,65 @@ def paynt_run(
     synthesizer = paynt.synthesizer.synthesizer.Synthesizer.choose_synthesizer(
         quotient, method, fsc_synthesis, storm_control
     )
+
     synthesizer.run(optimum_threshold)
+    if paynt.cli.export_generated_DT_FSC:
+        storm_fsc = storm_control.belief_controller_to_fsc(
+            storm_control.latest_storm_result, storm_control.latest_paynt_result_fsc
+        )
+        paynt_fsc = storm_control.latest_paynt_result_fsc
+
+        # Create output directories if they don't exist
+        os.makedirs(paynt.cli.export_generated_DT_FSC, exist_ok=True)
+
+        # Save FSC in pickle format (binary, compressed)
+        storm_pickle_path = os.path.join(
+            paynt.cli.export_generated_DT_FSC, "SAYNT", "fsc.pkl"
+        )
+        os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
+        if os.path.exists(storm_pickle_path):
+            print(
+                f"FSC file already exists at {storm_pickle_path}, skipping save operation"
+            )
+        else:
+            with open(storm_pickle_path, "wb") as f:
+                pickle.dump(storm_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Saved FSC to {storm_pickle_path} (pickle format)")
+
+        paynt_pickle_path = os.path.join(
+            paynt.cli.export_generated_DT_FSC, "PAYNT", "fsc.pkl"
+        )
+        os.makedirs(os.path.dirname(paynt_pickle_path), exist_ok=True)
+        if os.path.exists(paynt_pickle_path):
+            print(
+                f"FSC file already exists at {paynt_pickle_path}, skipping save operation"
+            )
+        else:
+            with open(paynt_pickle_path, "wb") as f:
+                pickle.dump(paynt_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
+            print(f"Saved FSC to {paynt_pickle_path} (pickle format)")
+
+        # Save FSC to JSON
+        # fsc_json_path = os.path.join(paynt.cli.export_generated_DT_FSC, "fsc.json")
+        # with open(fsc_json_path, "w") as f:
+        #     f.write(fsc.__str__())
+        # print(f"Saved FSC to {fsc_json_path}")
+
+        # separate_converter = FSCtoDTConverter(
+        #     fsc,
+        #     output_dir=os.path.join(paynt.cli.export_generated_DT_FSC, "separate"),
+        #     is_storm=True,
+        #     combined_mode=False,
+        # )
+        # separate_converter.run_dtcontrol()
+
+        # combined_converter = FSCtoDTConverter(
+        #     fsc,
+        #     output_dir=os.path.join(paynt.cli.export_generated_DT_FSC, "combined"),
+        #     is_storm=True,
+        #     combined_mode=True,
+        # )
+        # combined_converter.run_dtcontrol()
 
     if profiling:
         profiler.disable()

@@ -1,0 +1,34 @@
+\documentclass{article}
+\usepackage{booktabs}
+\usepackage{caption}
+\begin{document}
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of STORM and PAYNT Decision Tree Controllers}
+\begin{tabular}{lrrrrrrr}
+\toprule
+\textbf{Benchmark} & \textbf{Obs.} & \multicolumn{3}{c}{\textbf{STORM}} & \multicolumn{3}{c}{\textbf{PAYNT}} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8}
+ & & \textbf{FSC} & \textbf{Sep} & \textbf{Comb} & \textbf{FSC} & \textbf{Sep} & \textbf{Comb} \\
+\midrule
+\multicolumn{8}{l}{\textbf{Processed}}\\
+\quad grid-large-10-5 & 3 & 70 & 92 & 51 & 18 & 18 & 12 \\
+\quad grid-large-20-5 & 3 & 171 & 320 & 266 & --- & --- & --- \\
+\quad lanes-100-combined-new & 11 & 8092 & 16122 & 8106 & 34 & 78 & 63 \\
+\quad maze-alex & 6 & 443 & 974 & 590 & 28 & 68 & 39 \\
+\quad refuel-06 & 9 & 84 & 164 & 104 & 156 & 106 & 78 \\
+\quad refuel-08 & 9 & 140 & 264 & 155 & 142 & 118 & 90 \\
+\quad rocks-12 & 8 & 12313 & 2648 & 2511 & 3334 & 718 & 638 \\
+\quad rocks-16 & 8 & 20107 & 1080 & 1051 & 5522 & 70 & 69 \\
+\midrule
+\multicolumn{8}{l}{\textbf{STORM Both Skipped}}\\
+\quad drone-4-1 & 8 & 135020 & --- & --- & 768 & 204 & 179 \\
+\quad drone-4-2 & 8 & 147282 & --- & --- & 1522 & 340 & 309 \\
+\quad network-2-8-20 & 5 & 23373 & --- & --- & 2572 & 94 & 88 \\
+\quad network-3-8-20 & 6 & 31921 & --- & --- & 4720 & 272 & 267 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

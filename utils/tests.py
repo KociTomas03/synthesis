@@ -25,7 +25,7 @@ class TestPayntRun(unittest.TestCase):
         ]
         cls.output_dir = "test_outputs"
         cls.iterative_output_dir = "test_outputs_iterative"
-        cls.saynt_output_dir = "test_outputs_saynt"
+        cls.saynt_output_dir = "test_outputs_saynt2_DTs"
         cls.memory_constraints = [
             "onestep",
             "bothway",
@@ -182,17 +182,17 @@ class TestPayntRun(unittest.TestCase):
                 os.makedirs(output_dir)
 
             # Skip the test if the output file already exists
-            if os.path.exists(output_file):
-                print(
-                    f"Skipping existing result for project {project_path}, STORM_ITERATIVE, memory_constraint {memory_constraint}"
-                )
-                continue
+            # if os.path.exists(output_file):
+            #     print(
+            #         f"Skipping existing result for project {project_path}, STORM_ITERATIVE, memory_constraint {memory_constraint}"
+            #     )
+            #     continue
 
             print(
                 f"Starting paynt_run test for project {project_path}, STORM_ITERATIVE, memory_constraint {memory_constraint}"
             )
             # Run the paynt.py script as a separate process and capture its output
-            command = f"python3 paynt.py {project_path} --fsc-synthesis --storm-pomdp --iterative-storm 900 60 10 --generated-fsc-route {outputFolder}/image --memory-constraint {memory_constraint} --export-fsc-storm {outputFolder}/storm --export-fsc-paynt {outputFolder}/paynt --export-generated-dt-fsc {outputFolder}/decisionTree > {output_file} 2>&1"
+            command = f"python3 paynt.py {project_path} --fsc-synthesis --storm-pomdp --iterative-storm 900 60 10 --generated-fsc-route {outputFolder}/image --memory-constraint {memory_constraint} --export-fsc-storm {outputFolder}/storm --export-fsc-paynt {outputFolder}/paynt --export-generated-dt-fsc {outputFolder}/decision_trees > {output_file} 2>&1"
             result = subprocess.run(command, shell=True)
 
             # Check the exit code
@@ -210,9 +210,9 @@ class TestPayntRun(unittest.TestCase):
             print("Finished saynt_run test")
 
             # Print the content of the output file for debugging
-            with open(output_file, "r") as f:
-                print("Output file content:")
-                print(f.read())
+            # with open(output_file, "r") as f:
+            #     print("Output file content:")
+            #     print(f.read())
 
     pass
 

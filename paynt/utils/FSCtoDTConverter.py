@@ -1,40 +1,270 @@
+from pathlib import Path
+import sys
 import pandas as pd
 import re
 import subprocess
 import os
 import json
+import multiprocessing
+import signal
+
+project_root = str(Path(__file__).resolve().parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+from paynt.quotient.pomdp import PomdpQuotient
+from paynt.quotient.fsc import FSC
 
 
 class FSCtoDTConverter:
     def __init__(
         self,
-        fsc_output,
+        fsc_input,
         dtcontrol_path="dtcontrol",
         output_dir="decision_trees",
         combined_mode=False,
+        is_storm=False,
     ):
         """
-        Initializes the converter with FSC output as a list of strings.
+        Initializes the converter with FSC input either as a string or FSC object.
 
         Args:
-            fsc_output: FSC output as a string
+            fsc_input: FSC output as a string OR FSC object
             dtcontrol_path: Path to dtcontrol executable
             output_dir: Directory to save generated files
             combined_mode: If True, create a single decision tree with two outputs (action and next_memory)
+            is_storm: If True, FSC is from STORM format
         """
         self.output_dir = output_dir
-        self.fsc_output = fsc_output.split(", ")
         self.dtcontrol_path = dtcontrol_path
         self.combined_mode = combined_mode
+        self.is_storm = is_storm
         self.action_data = []  # To store (observations, m, A) tuples
         self.memory_data = []  # To store (observations, m, M') tuples
         self.observation_keys = set()  # To store all unique observation keys
-        self.parse_fsc_output()
+
+        # Parse the input based on its type
+        if isinstance(fsc_input, FSC):
+            self.parse_fsc_object(fsc_input)
+        else:
+            # Assume it's a string
+            self.fsc_output = fsc_input.split(", ")
+            self.parse_fsc_output()
+
+    def parse_fsc_object(self, fsc):
+        """
+        Parse FSC object directly instead of string output.
+
+        Args:
+            fsc: FSC object instance
+        """
+        # Process action function: NxZ -> Act
+        for node in range(fsc.num_nodes):
+            for obs in range(fsc.num_observations):
+                # Get action for this node and observation
+                if self.is_storm:
+                    # Handle Storm FSC format
+                    self._handle_storm_fsc_entry(fsc, node, obs)
+                elif fsc.is_deterministic:
+                    # Handle deterministic PAYNT FSC
+                    action = fsc.action_function[node][obs]
+                    if fsc.action_labels and action is not None:
+                        action = fsc.action_labels[action]
+                    if action is not None:
+                        # Get observation variables
+                        obs_vars = self._get_observation_variables(fsc, obs)
+                        self.observation_keys.update(obs_vars.keys())
+                        self.action_data.append((obs_vars, node, str(action)))
+                else:
+                    # Handle stochastic PAYNT FSC
+                    action_dict = fsc.action_function[node][obs]
+                    if action_dict:  # Check if there are any actions defined
+                        # Check if there's just one action with probability 1.0
+                        if (
+                            len(action_dict) == 1
+                            and list(action_dict.values())[0] == 1.0
+                        ):
+                            # Single deterministic action with p=1.0
+                            action = list(action_dict.keys())[0]
+                            if fsc.action_labels:
+                                action = fsc.action_labels[action]
+                            # Get observation variables
+                            obs_vars = self._get_observation_variables(fsc, obs)
+                            self.observation_keys.update(obs_vars.keys())
+                            self.action_data.append((obs_vars, node, str(action)))
+                        else:
+                            # Multiple actions with probabilities - preserve the distribution as string
+                            obs_vars = self._get_observation_variables(fsc, obs)
+                            self.observation_keys.update(obs_vars.keys())
+
+                            # Add probability as an observation variable
+                            labeled_dict = {}
+                            for action_idx, prob in action_dict.items():
+                                action = action_idx
+                                if fsc.action_labels:
+                                    action = fsc.action_labels[action_idx]
+                                labeled_dict[str(action)] = prob
+
+                            # Convert to sorted string representation
+                            sorted_dict_str = self._dict_to_sorted_str(labeled_dict)
+                            self.action_data.append((obs_vars, node, sorted_dict_str))
+
+                # Get next memory node for this node and observation
+                if not self.is_storm:  # PAYNT FSC memory update
+                    next_node = fsc.update_function[node][obs]
+                    if next_node is not None:
+                        # Get observation variables
+                        obs_vars = self._get_observation_variables(fsc, obs)
+                        self.observation_keys.update(obs_vars.keys())
+
+                        # Check if next_node is a dictionary (probabilistic)
+                        if isinstance(next_node, dict):
+                            # Convert memory distribution to sorted string
+                            sorted_dict_str = self._dict_to_sorted_str(next_node)
+                            self.memory_data.append((obs_vars, node, sorted_dict_str))
+                        else:
+                            self.memory_data.append((obs_vars, node, next_node))
+
+    def _handle_storm_fsc_entry(self, fsc, node, obs):
+        """
+        Handle Storm FSC format for a specific node and observation.
+
+        Args:
+            fsc: FSC object
+            node: Memory node index
+            obs: Observation index
+        """
+        # Get observation variables
+        obs_vars = self._get_observation_variables(fsc, obs)
+        self.observation_keys.update(obs_vars.keys())
+
+        try:
+            # Try to access action - might be direct index or dict with distribution
+            action_value = fsc.action_function[node][obs]
+
+            if action_value is None:
+                return
+
+            if isinstance(action_value, dict):
+                # Handle probabilistic actions with proper labels
+                # First check if it's just a single action with probability 1.0
+                if len(action_value) == 1 and list(action_value.values())[0] == 1.0:
+                    # Single deterministic action with p=1.0
+                    action_idx = list(action_value.keys())[0]
+                    action = action_idx
+                    if fsc.action_labels and action_idx is not None:
+                        action = fsc.action_labels[action_idx]
+                    self.action_data.append((obs_vars, node, str(action)))
+                else:
+                    # Convert dict to use action labels as keys
+                    labeled_dict = {}
+                    for action_idx, prob in action_value.items():
+                        action = action_idx
+                        if fsc.action_labels and action_idx is not None:
+                            action = fsc.action_labels[action_idx]
+                        labeled_dict[str(action)] = prob
+
+                    # Convert to sorted string representation
+                    sorted_dict_str = self._dict_to_sorted_str(labeled_dict)
+                    self.action_data.append((obs_vars, node, sorted_dict_str))
+            else:
+                # Handle direct action index
+                action = action_value
+                if fsc.action_labels and action is not None:
+                    action = fsc.action_labels[action]
+
+                self.action_data.append((obs_vars, node, str(action)))
+
+            # Handle memory updates for Storm
+            if hasattr(fsc, "update_function") and len(fsc.update_function) > node:
+                next_node = fsc.update_function[node][obs]
+                if next_node is not None:
+                    if isinstance(next_node, dict):
+                        # Check for single memory state with probability 1.0
+                        if len(next_node) == 1 and list(next_node.values())[0] == 1.0:
+                            # Use the single memory state directly
+                            next_memory = list(next_node.keys())[0]
+                            self.memory_data.append((obs_vars, node, next_memory))
+                        else:
+                            # Convert memory distribution to sorted string
+                            sorted_dict_str = self._dict_to_sorted_str(next_node)
+                            self.memory_data.append((obs_vars, node, sorted_dict_str))
+                    else:
+                        self.memory_data.append((obs_vars, node, next_node))
+
+        except (IndexError, KeyError, TypeError) as e:
+            print(f"Error processing Storm FSC at node {node}, obs {obs}: {e}")
+
+    def _dict_to_sorted_str(self, dict_value):
+        """Convert a dictionary to a sorted string representation."""
+        sorted_items = sorted(dict_value.items(), key=lambda x: str(x[0]))
+        return "{" + ", ".join(f"{k}: {v}" for k, v in sorted_items) + "}"
+
+    def _get_observation_variables(self, fsc, obs):
+        """Helper to extract observation variables consistently."""
+        obs_vars = {}
+        if fsc.observation_labels and obs < len(fsc.observation_labels):
+            obs_label = fsc.observation_labels[obs]
+            if isinstance(obs_label, dict):
+                # Already in the right format
+                obs_vars = obs_label
+            elif isinstance(obs_label, str):
+                # Parse from string format using the same logic as FSC output
+                var_pattern = re.compile(
+                    r"([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)=(\w+)|([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)"
+                )
+                obs_vars = self._parse_variables(obs_label, var_pattern)
+        else:
+            # If no labels, create a default observation variable
+            obs_vars = {"observation": obs}
+        return obs_vars
 
     def parse_fsc_output(self):
         """
         Parses the FSC output to extract action and memory transitions.
         Each line is wrapped in quotes and contains variable assignments.
+        """
+        # Different parsing approaches for STORM vs PAYNT
+        if self.is_storm:
+            self._parse_storm_format()
+        else:
+            self._parse_paynt_format()
+
+    def _parse_storm_format(self):
+        """
+        Parse FSC output in STORM format
+        """
+        # Implement STORM-specific parsing logic
+        # This is a placeholder and will need to be adapted to STORM's format
+        action_pattern = re.compile(r"A\((.+?),(\d+)\)=(\w+)")
+        memory_pattern = re.compile(r"M\((.+?),(\d+)\)=(\d+)")
+        var_pattern = re.compile(
+            r"([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)=(\w+)|([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)"
+        )
+
+        for line in self.fsc_output:
+            # Remove quotes and whitespace
+            line = line.strip(' "')
+
+            # Storm format specific parsing logic here
+            # This is just a placeholder - adjust to match Storm's actual format
+            action_match = action_pattern.match(line)
+            memory_match = memory_pattern.match(line)
+
+            if action_match:
+                vars_str, m, action = action_match.groups()
+                vars_dict = self._parse_variables(vars_str, var_pattern)
+                self.observation_keys.update(vars_dict.keys())
+                self.action_data.append((vars_dict, int(m), action))
+
+            if memory_match:
+                vars_str, m, new_m = memory_match.groups()
+                vars_dict = self._parse_variables(vars_str, var_pattern)
+                self.observation_keys.update(vars_dict.keys())
+                self.memory_data.append((vars_dict, int(m), int(new_m)))
+
+    def _parse_paynt_format(self):
+        """
+        Parse FSC output in PAYNT format
         """
         action_pattern = re.compile(r"A\((.+?),(\d+)\)=(\w+)")
         memory_pattern = re.compile(r"M\((.+?),(\d+)\)=(\d+)")
@@ -364,9 +594,56 @@ class FSCtoDTConverter:
                 columns=columns,
             )
 
-    def run_dtcontrol(self):
+    def _process_memory_state(
+        self, memory_value, output_dir, shared_benchmark_file=None
+    ):
+        """
+        Process a single memory state, using a shared benchmark file across all memories.
+
+        Args:
+            memory_value: Memory state value to process
+            output_dir: Output directory for decision trees
+            shared_benchmark_file: Path to a shared benchmark file for all memories
+        """
+        try:
+            # Create memory-specific directory
+            memory_dir = os.path.join(output_dir, f"memory_{memory_value}")
+            os.makedirs(memory_dir, exist_ok=True)
+
+            # Use the shared benchmark file if provided, otherwise create memory-specific one
+            benchmark_file = (
+                shared_benchmark_file
+                if shared_benchmark_file
+                else os.path.join(memory_dir, f"benchmark.json")
+            )
+
+            if self.combined_mode:
+                combined_file, _ = self.save_csv_files(memory_value)
+                print(f"\nProcessing combined tree for memory value {memory_value}")
+                self._run_dtcontrol_process(combined_file, output_dir, benchmark_file)
+            else:
+                action_file, memory_file = self.save_csv_files(memory_value)
+                print(f"\nProcessing trees for memory value {memory_value}")
+
+                # Action tree
+                self._run_dtcontrol_process(action_file, output_dir, benchmark_file)
+
+                # Memory tree
+                self._run_dtcontrol_process(memory_file, output_dir, benchmark_file)
+
+            return memory_value, True
+
+        except subprocess.CalledProcessError as e:
+            print(f"dtControl failed for memory {memory_value} with error: {e}")
+            return memory_value, False
+
+    def run_dtcontrol(self, max_states=None, parallel=True, starting_memory=0):
         """
         Runs dtControl on the generated CSV files for each memory value.
+
+        Args:
+            max_states: Maximum number of memory states to process (None = process all)
+            parallel: Whether to use parallel processing
         """
         # Get unique memory values from both action and memory data
         action_df = self.get_action_dataframe()
@@ -375,30 +652,57 @@ class FSCtoDTConverter:
             set(action_df["memory"].unique()) | set(memory_df["memory"].unique())
         )
 
-        benchmark_file = os.path.join(self.output_dir, "benchmark.json")
+        # Filter memory values to start from the specified starting_memory
+        if starting_memory > 0:
+            memory_values = [m for m in memory_values if m >= starting_memory]
+            print(f"Starting from memory state {starting_memory}")
+
+        # Limit memory states if requested
+        if max_states is not None:
+            memory_values = memory_values[:max_states]
+
+        total_states = len(memory_values)
+        print(f"Processing {total_states} memory states")
+
         output_dir = os.path.join(self.output_dir)
 
-        for memory_value in memory_values:
-            try:
-                if self.combined_mode:
-                    combined_file, _ = self.save_csv_files(memory_value)
-                    print(f"\nProcessing combined tree for memory value {memory_value}")
-                    self._run_dtcontrol_process(
-                        combined_file, output_dir, benchmark_file
-                    )
-                else:
-                    action_file, memory_file = self.save_csv_files(memory_value)
-                    print(f"\nProcessing trees for memory value {memory_value}")
+        # Create a shared benchmark file at the parent level
+        shared_benchmark_file = os.path.join(output_dir, "benchmark.json")
 
-                    # Action tree
-                    self._run_dtcontrol_process(action_file, output_dir, benchmark_file)
+        # Ensure the output directory exists
+        os.makedirs(output_dir, exist_ok=True)
 
-                    # Memory tree
-                    self._run_dtcontrol_process(memory_file, output_dir, benchmark_file)
+        # Use parallel processing if requested
+        if parallel and len(memory_values) > 1:
+            from functools import partial
 
-            except subprocess.CalledProcessError as e:
-                print(f"dtControl failed for memory {memory_value} with error: {e}")
-                continue
+            num_cores = max(1, multiprocessing.cpu_count() - 2)  # Leave two cores free
+            print(f"Using parallel processing with {num_cores} cores")
+
+            # Create a partial function with self bound to it
+            process_func = partial(
+                self._process_memory_state,
+                output_dir=output_dir,
+                shared_benchmark_file=shared_benchmark_file,
+            )
+
+            # Run in parallel with process pool
+            with multiprocessing.Pool(num_cores) as pool:
+                results = pool.map(process_func, memory_values)
+
+            # Print summary
+            succeeded = sum(1 for _, success in results if success)
+            print(
+                f"Successfully processed {succeeded}/{len(memory_values)} memory states"
+            )
+        else:
+            # Sequential processing
+            for memory_value in memory_values:
+                self._process_memory_state(
+                    memory_value,
+                    output_dir,
+                    shared_benchmark_file=shared_benchmark_file,
+                )
 
     def _run_dtcontrol_process(self, input_file, output_dir, benchmark_file):
         """Helper method to run dtcontrol with consistent parameters."""
@@ -419,28 +723,59 @@ class FSCtoDTConverter:
         )
 
     @staticmethod
-    def process_existing_outputs(base_dir, combined_mode=False):
+    def process_existing_outputs(
+        base_dir, combined_mode=False, max_states=None, parallel=True
+    ):
         """
         Processes existing FSC outputs in the specified base directory.
 
         Args:
             base_dir: Base directory containing the FSC outputs
             combined_mode: If True, create combined decision trees
+            max_states: Maximum number of memory states to process
+            parallel: Whether to use parallel processing
         """
+        fsc_files = []
+
+        # Find all FSC files
         for root, dirs, files in os.walk(base_dir):
             for file in files:
-                if file == "paynt.fsc":
-                    with open(os.path.join(root, file), "r") as f:
-                        fsc_output = f.read()
-                        output_dir = os.path.join(
-                            os.path.dirname(root), "decision_trees_combined"
-                        )
-                        converter = FSCtoDTConverter(
-                            fsc_output,
-                            output_dir=output_dir,
-                            combined_mode=combined_mode,
-                        )
-                        converter.run_dtcontrol()
+                if file == "paynt.fsc" or file == "storm.fsc":
+                    fsc_files.append((os.path.join(root, file), file == "storm.fsc"))
+
+        print(f"Found {len(fsc_files)} FSC files to process")
+
+        # Process each FSC file
+        for fsc_path, is_storm in fsc_files:
+            try:
+                with open(fsc_path, "r") as f:
+                    fsc_output = f.read()
+
+                # Create output directory (next to the FSC directory)
+                parent_dir = os.path.dirname(os.path.dirname(fsc_path))
+                output_dir = os.path.join(
+                    parent_dir,
+                    "decision_trees_combined" if combined_mode else "decision_trees",
+                )
+
+                print(
+                    f"Processing {'Storm' if is_storm else 'PAYNT'} FSC: {fsc_path} -> {output_dir}"
+                )
+
+                converter = FSCtoDTConverter(
+                    fsc_output,
+                    output_dir=output_dir,
+                    combined_mode=combined_mode,
+                    is_storm=is_storm,
+                )
+
+                converter.run_dtcontrol(max_states=max_states, parallel=parallel)
+
+            except Exception as e:
+                print(f"Error processing {fsc_path}: {e}")
+                import traceback
+
+                traceback.print_exc()
 
 
 if __name__ == "__main__":
@@ -449,5 +784,6 @@ if __name__ == "__main__":
     # test = ""
     # converter = FSCtoDTConverter(test, output_dir=base_dir, combined_mode=False)
     # converter.run_dtcontrol()
+    pomdpQuotient = PomdpQuotient()
     base_dir = "test_outpus_saynt"
     FSCtoDTConverter.process_existing_outputs(base_dir, True)
