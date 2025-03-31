@@ -1,0 +1,18 @@
+digraph {
+	nodesep=1 sep=10 splines=true
+	0 [label=0 shape=ellipse]
+	1 [label=1 shape=ellipse]
+	2 [label=2 shape=ellipse]
+	0 -> 1 [label="c,d/b"]
+	1 -> 0 [label="d/b"]
+	2 -> 2 [label="d/a"]
+	0 -> 0 [label="a,e/d"]
+	1 -> 2 [label="a,f/c"]
+	2 -> 1 [label="a,f/c"]
+	0 -> 0 [label="f,g/c"]
+	0 -> 2 [label="b/a"]
+	subgraph cluster_legend {
+		fontcolor=blue fontsize=20 label=Legend
+		legend [label=<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0"><TR><TD><B>Symbol</B></TD><TD><B>Observation</B></TD></TR><TR><TD>a</TD><TD>[bad=0	&amp; d=1	&amp; goal=0	&amp; l=0	&amp; r=0	&amp; u=1]</TD></TR><TR><TD>b</TD><TD>[bad=0	&amp; d=1	&amp; goal=0	&amp; l=0	&amp; r=1	&amp; u=0]</TD></TR><TR><TD>c</TD><TD>[bad=0	&amp; d=1	&amp; goal=0	&amp; l=1	&amp; r=0	&amp; u=0]</TD></TR><TR><TD>d</TD><TD>[bad=0	&amp; d=0	&amp; goal=0	&amp; l=1	&amp; r=1	&amp; u=0]</TD></TR><TR><TD>e</TD><TD>[bad=0	&amp; d=1	&amp; goal=0	&amp; l=1	&amp; r=1	&amp; u=0]</TD></TR><TR><TD>f</TD><TD>[bad=1	&amp; d=0	&amp; goal=0	&amp; l=0	&amp; r=0	&amp; u=1]</TD></TR><TR><TD>g</TD><TD>[bad=0	&amp; d=0	&amp; goal=1	&amp; l=0	&amp; r=0	&amp; u=1]</TD></TR><TR><TD><B>Symbol</B></TD><TD><B>Action</B></TD></TR><TR><TD>a</TD><TD>right</TD></TR><TR><TD>b</TD><TD>left</TD></TR><TR><TD>c</TD><TD>up</TD></TR><TR><TD>d</TD><TD>down</TD></TR></TABLE>> shape=plaintext]
+	}
+}

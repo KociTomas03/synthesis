@@ -1,0 +1,211 @@
+digraph model {
+	0 [ label = "0: {__extra, target}" ];
+	1 [ label = "1: {[end=0	& xobs=0	& yobs=0], init
+}" ];
+	2 [ label = "2: {[end=0	& xobs=0	& yobs=0]}" ];
+	3 [ label = "3: {[end=0	& xobs=0	& yobs=0]}" ];
+	4 [ label = "4: {[end=0	& xobs=0	& yobs=0]}" ];
+	5 [ label = "5: {[end=0	& xobs=0	& yobs=0]}" ];
+	6 [ label = "6: {[end=0	& xobs=0	& yobs=0]}" ];
+	7 [ label = "7: {[end=0	& xobs=1	& yobs=0]}" ];
+	8 [ label = "8: {[end=0	& xobs=0	& yobs=0]}" ];
+	9 [ label = "9: {[end=0	& xobs=1	& yobs=0]}" ];
+	10 [ label = "10: {[end=0	& xobs=1	& yobs=0]}" ];
+	11 [ label = "11: {[end=0	& xobs=0	& yobs=0]}" ];
+	12 [ label = "12: {[end=0	& xobs=1	& yobs=0]}" ];
+	13 [ label = "13: {[end=0	& xobs=1	& yobs=0]}" ];
+	14 [ label = "14: {[end=0	& xobs=1	& yobs=0]}" ];
+	15 [ label = "15: {[end=0	& xobs=0	& yobs=0]}" ];
+	16 [ label = "16: {[end=0	& xobs=1	& yobs=0]}" ];
+	17 [ label = "17: {[end=0	& xobs=1	& yobs=0]}" ];
+	18 [ label = "18: {[end=0	& xobs=1	& yobs=0]}" ];
+	19 [ label = "19: {[end=0	& xobs=1	& yobs=0]}" ];
+	20 [ label = "20: {[end=0	& xobs=0	& yobs=0]}" ];
+	21 [ label = "21: {[end=0	& xobs=1	& yobs=1]}" ];
+	22 [ label = "22: {[end=0	& xobs=1	& yobs=0]}" ];
+	23 [ label = "23: {[end=0	& xobs=1	& yobs=0]}" ];
+	24 [ label = "24: {[end=0	& xobs=1	& yobs=0]}" ];
+	25 [ label = "25: {[end=0	& xobs=1	& yobs=0]}" ];
+	26 [ label = "26: {[end=0	& xobs=1	& yobs=0]}" ];
+	27 [ label = "27: {[end=0	& xobs=0	& yobs=0]}" ];
+	28 [ label = "28: {[end=0	& xobs=1	& yobs=1]}" ];
+	29 [ label = "29: {[end=0	& xobs=1	& yobs=1]}" ];
+	30 [ label = "30: {[end=0	& xobs=1	& yobs=0]}" ];
+	31 [ label = "31: {[end=0	& xobs=1	& yobs=0]}" ];
+	32 [ label = "32: {[end=0	& xobs=1	& yobs=0]}" ];
+	33 [ label = "33: {[end=0	& xobs=1	& yobs=0]}" ];
+	34 [ label = "34: {[end=0	& xobs=1	& yobs=0]}" ];
+	35 [ label = "35: {[end=0	& xobs=1	& yobs=0]}" ];
+	36 [ label = "36: {[end=0	& xobs=0	& yobs=0]}" ];
+	37 [ label = "37: {[end=0	& xobs=1	& yobs=1], cutoff
+sched_0}" ];
+	38 [ label = "38: {[end=0	& xobs=1	& yobs=1], cutoff
+sched_0}" ];
+	39 [ label = "39: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	40 [ label = "40: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	41 [ label = "41: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	42 [ label = "42: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	43 [ label = "43: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	44 [ label = "44: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	45 [ label = "45: {[end=0	& xobs=1	& yobs=0], cutoff
+sched_0}" ];
+	46 [ label = "46: {[end=0	& xobs=0	& yobs=0], cutoff
+sched_0}" ];
+	"0c" [shape = "point"]
+	0 -> "0c" [label= "{loop}"];
+	"0c" -> 0 [ label= "1" ];
+	"1c" [shape = "point"]
+	1 -> "1c" [label= "{east}"];
+	"1c" -> 2 [ label= "1" ];
+	"2c" [shape = "point"]
+	2 -> "2c" [label= "{east}"];
+	"2c" -> 3 [ label= "1" ];
+	"3c" [shape = "point"]
+	3 -> "3c" [label= "{east}"];
+	"3c" -> 4 [ label= "1" ];
+	"4c" [shape = "point"]
+	4 -> "4c" [label= "{east}"];
+	"4c" -> 5 [ label= "1" ];
+	"5c" [shape = "point"]
+	5 -> "5c" [label= "{north}"];
+	"5c" -> 6 [ label= "1" ];
+	"6c" [shape = "point"]
+	6 -> "6c" [label= "{east}"];
+	"6c" -> 7 [ label= "0.030361" ];
+	"6c" -> 8 [ label= "0.969639" ];
+	"7c" [shape = "point"]
+	7 -> "7c" [label= "{east}"];
+	"7c" -> 9 [ label= "1" ];
+	"8c" [shape = "point"]
+	8 -> "8c" [label= "{east}"];
+	"8c" -> 10 [ label= "0.0787504" ];
+	"8c" -> 11 [ label= "0.92125" ];
+	"9c" [shape = "point"]
+	9 -> "9c" [label= "{east}"];
+	"9c" -> 12 [ label= "1" ];
+	"10c" [shape = "point"]
+	10 -> "10c" [label= "{east}"];
+	"10c" -> 13 [ label= "1" ];
+	"11c" [shape = "point"]
+	11 -> "11c" [label= "{east}"];
+	"11c" -> 14 [ label= "0.128981" ];
+	"11c" -> 15 [ label= "0.871019" ];
+	"12c" [shape = "point"]
+	12 -> "12c" [label= "{east}"];
+	"12c" -> 16 [ label= "1" ];
+	"13c" [shape = "point"]
+	13 -> "13c" [label= "{north}"];
+	"13c" -> 17 [ label= "1" ];
+	"14c" [shape = "point"]
+	14 -> "14c" [label= "{north}"];
+	"14c" -> 18 [ label= "1" ];
+	"15c" [shape = "point"]
+	15 -> "15c" [label= "{east}"];
+	"15c" -> 19 [ label= "0.173765" ];
+	"15c" -> 20 [ label= "0.826235" ];
+	"16c" [shape = "point"]
+	16 -> "16c" [label= "{north}"];
+	"16c" -> 22 [ label= "1" ];
+	"17c" [shape = "point"]
+	17 -> "17c" [label= "{north}"];
+	"17c" -> 23 [ label= "1" ];
+	"18c" [shape = "point"]
+	18 -> "18c" [label= "{north}"];
+	"18c" -> 24 [ label= "1" ];
+	"19c" [shape = "point"]
+	19 -> "19c" [label= "{east}"];
+	"19c" -> 25 [ label= "1" ];
+	"20c" [shape = "point"]
+	20 -> "20c" [label= "{east}"];
+	"20c" -> 26 [ label= "0.211512" ];
+	"20c" -> 27 [ label= "0.788488" ];
+	"21c" [shape = "point"]
+	21 -> "21c" [label= "{east}"];
+	"21c" -> 29 [ label= "1" ];
+	"22c" [shape = "point"]
+	22 -> "22c" [label= "{east}"];
+	"22c" -> 30 [ label= "1" ];
+	"23c" [shape = "point"]
+	23 -> "23c" [label= "{north}"];
+	"23c" -> 31 [ label= "1" ];
+	"24c" [shape = "point"]
+	24 -> "24c" [label= "{north}"];
+	"24c" -> 32 [ label= "1" ];
+	"25c" [shape = "point"]
+	25 -> "25c" [label= "{east}"];
+	"25c" -> 33 [ label= "1" ];
+	"26c" [shape = "point"]
+	26 -> "26c" [label= "{east}"];
+	"26c" -> 34 [ label= "1" ];
+	"27c" [shape = "point"]
+	27 -> "27c" [label= "{east}"];
+	"27c" -> 35 [ label= "0.242787" ];
+	"27c" -> 36 [ label= "0.757213" ];
+	"28c" [shape = "point"]
+	28 -> "28c" [label= "{east}"];
+	"28c" -> 37 [ label= "1" ];
+	"29c" [shape = "point"]
+	29 -> "29c" [label= "{north}"];
+	"29c" -> 38 [ label= "1" ];
+	"30c" [shape = "point"]
+	30 -> "30c" [label= "{north}"];
+	"30c" -> 39 [ label= "1" ];
+	"31c" [shape = "point"]
+	31 -> "31c" [label= "{north}"];
+	"31c" -> 28 [ label= "0.0308912" ];
+	"31c" -> 40 [ label= "0.969109" ];
+	"32c" [shape = "point"]
+	32 -> "32c" [label= "{north}"];
+	"32c" -> 21 [ label= "0.0308666" ];
+	"32c" -> 41 [ label= "0.969133" ];
+	"33c" [shape = "point"]
+	33 -> "33c" [label= "{north}"];
+	"33c" -> 42 [ label= "1" ];
+	"34c" [shape = "point"]
+	34 -> "34c" [label= "{north}"];
+	"34c" -> 43 [ label= "1" ];
+	"35c" [shape = "point"]
+	35 -> "35c" [label= "{east}"];
+	"35c" -> 44 [ label= "1" ];
+	"36c" [shape = "point"]
+	36 -> "36c" [label= "{east}"];
+	"36c" -> 45 [ label= "0.268681" ];
+	"36c" -> 46 [ label= "0.731319" ];
+	"37c" [shape = "point"]
+	37 -> "37c" [label= "{sched_0}"];
+	"37c" -> 0 [ label= "1" ];
+	"38c" [shape = "point"]
+	38 -> "38c" [label= "{sched_0}"];
+	"38c" -> 0 [ label= "1" ];
+	"39c" [shape = "point"]
+	39 -> "39c" [label= "{sched_0}"];
+	"39c" -> 0 [ label= "1" ];
+	"40c" [shape = "point"]
+	40 -> "40c" [label= "{sched_0}"];
+	"40c" -> 0 [ label= "1" ];
+	"41c" [shape = "point"]
+	41 -> "41c" [label= "{sched_0}"];
+	"41c" -> 0 [ label= "1" ];
+	"42c" [shape = "point"]
+	42 -> "42c" [label= "{sched_0}"];
+	"42c" -> 0 [ label= "1" ];
+	"43c" [shape = "point"]
+	43 -> "43c" [label= "{sched_0}"];
+	"43c" -> 0 [ label= "1" ];
+	"44c" [shape = "point"]
+	44 -> "44c" [label= "{sched_0}"];
+	"44c" -> 0 [ label= "1" ];
+	"45c" [shape = "point"]
+	45 -> "45c" [label= "{sched_0}"];
+	"45c" -> 0 [ label= "1" ];
+	"46c" [shape = "point"]
+	46 -> "46c" [label= "{sched_0}"];
+	"46c" -> 0 [ label= "1" ];
+}
+

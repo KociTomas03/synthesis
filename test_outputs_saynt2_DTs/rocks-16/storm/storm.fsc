@@ -1,0 +1,126 @@
+digraph model {
+	0 [ label = "0: {__extra, target}" ];
+	1 [ label = "1: {[!started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=0	& y=0]
+init}" ];
+	2 [ label = "2: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=0	& y=0]
+}" ];
+	3 [ label = "3: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=0]
+}" ];
+	4 [ label = "4: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& r2lastobs	& x=1	& y=0]
+}" ];
+	5 [ label = "5: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=0]
+}" ];
+	6 [ label = "6: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& r2lastobs	& x=1	& y=0]
+}" ];
+	7 [ label = "7: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& r2lastobs	& x=1	& y=0]
+}" ];
+	8 [ label = "8: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=0]
+}" ];
+	9 [ label = "9: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=1]
+}" ];
+	10 [ label = "10: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=2	& y=0]
+}" ];
+	11 [ label = "11: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=2]
+}" ];
+	12 [ label = "12: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=3	& y=0]
+}" ];
+	13 [ label = "13: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=3]
+}" ];
+	14 [ label = "14: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=4	& y=0]
+}" ];
+	15 [ label = "15: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=4]
+}" ];
+	16 [ label = "16: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=5	& y=0]
+}" ];
+	17 [ label = "17: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=5]
+}" ];
+	18 [ label = "18: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=6	& y=0]
+}" ];
+	19 [ label = "19: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=6]
+}" ];
+	20 [ label = "20: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=7]
+}" ];
+	21 [ label = "21: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=7	& y=0]
+}" ];
+	22 [ label = "22: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=1	& y=8]
+cutoff, sched_1}" ];
+	23 [ label = "23: {[started	& !finish	& !r1taken	& !r1lastobs	& !r2taken	& !r2lastobs	& x=8	& y=0]
+cutoff, finite_mem}" ];
+	"0c" [shape = "point"]
+	0 -> "0c" [label= "{loop}"];
+	"0c" -> 0 [ label= "1" ];
+	"1c" [shape = "point"]
+	1 -> "1c" [label= "{placement}"];
+	"1c" -> 2 [ label= "1" ];
+	"2c" [shape = "point"]
+	2 -> "2c" [label= "{east}"];
+	"2c" -> 3 [ label= "1" ];
+	"3c" [shape = "point"]
+	3 -> "3c" [label= "{r2sense}"];
+	"3c" -> 4 [ label= "0.5" ];
+	"3c" -> 5 [ label= "0.5" ];
+	"4c" [shape = "point"]
+	4 -> "4c" [label= "{r2sense}"];
+	"4c" -> 3 [ label= "0.32" ];
+	"4c" -> 6 [ label= "0.68" ];
+	"5c" [shape = "point"]
+	5 -> "5c" [label= "{r2sense}"];
+	"5c" -> 7 [ label= "0.32" ];
+	"5c" -> 8 [ label= "0.68" ];
+	"6c" [shape = "point"]
+	6 -> "6c" [label= "{south}"];
+	"6c" -> 9 [ label= "1" ];
+	"7c" [shape = "point"]
+	7 -> "7c" [label= "{r2sense}"];
+	"7c" -> 4 [ label= "0.5" ];
+	"7c" -> 5 [ label= "0.5" ];
+	"8c" [shape = "point"]
+	8 -> "8c" [label= "{east}"];
+	"8c" -> 10 [ label= "1" ];
+	"9c" [shape = "point"]
+	9 -> "9c" [label= "{south}"];
+	"9c" -> 11 [ label= "1" ];
+	"10c" [shape = "point"]
+	10 -> "10c" [label= "{east}"];
+	"10c" -> 12 [ label= "1" ];
+	"11c" [shape = "point"]
+	11 -> "11c" [label= "{south}"];
+	"11c" -> 13 [ label= "1" ];
+	"12c" [shape = "point"]
+	12 -> "12c" [label= "{east}"];
+	"12c" -> 14 [ label= "1" ];
+	"13c" [shape = "point"]
+	13 -> "13c" [label= "{south}"];
+	"13c" -> 15 [ label= "1" ];
+	"14c" [shape = "point"]
+	14 -> "14c" [label= "{east}"];
+	"14c" -> 16 [ label= "1" ];
+	"15c" [shape = "point"]
+	15 -> "15c" [label= "{south}"];
+	"15c" -> 17 [ label= "1" ];
+	"16c" [shape = "point"]
+	16 -> "16c" [label= "{east}"];
+	"16c" -> 18 [ label= "1" ];
+	"17c" [shape = "point"]
+	17 -> "17c" [label= "{south}"];
+	"17c" -> 19 [ label= "1" ];
+	"18c" [shape = "point"]
+	18 -> "18c" [label= "{east}"];
+	"18c" -> 21 [ label= "1" ];
+	"19c" [shape = "point"]
+	19 -> "19c" [label= "{south}"];
+	"19c" -> 20 [ label= "1" ];
+	"20c" [shape = "point"]
+	20 -> "20c" [label= "{south}"];
+	"20c" -> 22 [ label= "1" ];
+	"21c" [shape = "point"]
+	21 -> "21c" [label= "{east}"];
+	"21c" -> 23 [ label= "1" ];
+	"22c" [shape = "point"]
+	22 -> "22c" [label= "{sched_1}"];
+	"22c" -> 0 [ label= "1" ];
+	"23c" [shape = "point"]
+	23 -> "23c" [label= "{mem_node_0}"];
+	"23c" -> 0 [ label= "1" ];
+}
+
