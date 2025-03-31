@@ -23,7 +23,6 @@ def minimize_fsc_object(fsc):
         for obs in observations:
             next_node = fsc.update_function[node][obs]
             # Store the transition as-is (whether deterministic or probabilistic)
-            # For algorithm comparison, we'll convert as needed
             if isinstance(next_node, dict):
                 is_probabilistic_transitions = True
                 # Store the full distribution - don't simplify it
@@ -42,8 +41,6 @@ def minimize_fsc_object(fsc):
             if fsc.is_deterministic:
                 actions[node][obs] = fsc.action_function[node][obs]
             else:
-                # For non-deterministic FSCs, store the full distribution
-                # Don't reduce to just the most likely action
                 if isinstance(fsc.action_function[node][obs], dict):
                     actions[node][obs] = fsc.action_function[node][obs].copy()
                 else:
@@ -62,73 +59,83 @@ def minimize_fsc_object(fsc):
 
     # Set up the action function
     for i, node_name in enumerate(min_nodes):
+        # Get the representative node from the partition
+        partition_nodes = partitions[i]
+        representative_node = partition_nodes[0]
+
         for obs in observations:
-            if fsc.is_deterministic:
-                min_fsc.action_function[i][obs] = min_actions[node_name][obs]
-            else:
-                # For non-deterministic FSCs, we need to maintain the distribution
-                # We'll copy the distribution from one of the original nodes in this partition
-                # Find a representative node from the partition
-                if node_name.startswith("n") and node_name[1:].isdigit():
-                    # If node names follow our 'nX' format
-                    original_node = int(node_name[1:])  # Remove 'n' from 'nX'
-                else:
-                    # If we're using original node IDs
-                    original_node = int(node_name)
+            min_fsc.action_function[i][obs] = fsc.action_function[representative_node][
+                obs
+            ]
 
-                # Make sure original_node is in range
-                original_node = min(original_node, fsc.num_nodes - 1)
-
-                if obs < len(fsc.action_function[original_node]):
-                    min_fsc.action_function[i][obs] = fsc.action_function[
-                        original_node
-                    ][obs]
-
-    # Set up the update function
+    # Set up the update function - FIXED to avoid nested loop bug
     for i, node_name in enumerate(min_nodes):
-        for obs in observations:
-            next_node_name = min_transitions[node_name][obs]
+        partition_nodes = partitions[i]
+
+        for current_obs in observations:  # Using current_obs instead of obs
+            # Check if all nodes in this partition have None for this observation
+            all_none = True
+            for orig_node in partition_nodes:
+                if fsc.update_function[orig_node][current_obs] is not None:
+                    all_none = False
+                    break
+
+            if all_none:
+                # If all original nodes had None, preserve None
+                min_fsc.update_function[i][current_obs] = None
+                continue
 
             if is_probabilistic_transitions:
-                # For probabilistic transitions, we'll merge distributions
-                # Get all nodes in this partition
-                partition_nodes = partitions[i]
+                # Check if any node in the partition has a non-probabilistic transition
+                non_prob_transition = None
+                for orig_node in partition_nodes:
+                    transition = fsc.update_function[orig_node][current_obs]
+                    if not isinstance(transition, dict):
+                        non_prob_transition = transition
+                        break
 
-                # For each observation, merge all distributions to the same target partition
-                for obs in observations:
-                    # Initialize the combined distribution
-                    combined_dist = defaultdict(float)
-                    total_weight = 0.0
+                if non_prob_transition is not None:
+                    # If any node has a non-probabilistic transition, use it
+                    min_fsc.update_function[i][current_obs] = non_prob_transition
+                    continue
 
-                    # Process each node in the partition
-                    for orig_node in partition_nodes:
-                        if isinstance(fsc.update_function[orig_node][obs], dict):
-                            # For each probability in the node's distribution
-                            for next_node, prob in fsc.update_function[orig_node][
-                                obs
-                            ].items():
-                                # Find which partition contains next_node
-                                for j, part in enumerate(partitions):
-                                    if next_node in part:
-                                        # Map to minimized node and add the probability
-                                        min_target = node_name_to_id[f"n{j}"]
-                                        combined_dist[min_target] += prob
-                                        total_weight += prob
-                                        break
+                # For probabilistic transitions, we need to merge distributions
+                combined_dist = defaultdict(float)
+                total_weight = 0.0
 
-                    # Normalize if needed
-                    if total_weight > 0:
-                        for k in combined_dist:
-                            combined_dist[k] /= total_weight
+                # Process each node in the partition
+                for orig_node in partition_nodes:
+                    for next_node, prob in fsc.update_function[orig_node][
+                        current_obs
+                    ].items():
+                        # Find which partition contains next_node
+                        for j, part in enumerate(partitions):
+                            if next_node in part:
+                                min_target = node_name_to_id[f"n{j}"]
+                                combined_dist[min_target] += prob
+                                total_weight += prob
+                                break
 
-                    # Set the distribution in the minimized FSC
-                    if combined_dist:
-                        min_fsc.update_function[i][obs] = dict(combined_dist)
-                    else:
-                        # Default if no distribution was found
-                        min_fsc.update_function[i][obs] = {0: 1.0}
+                # Normalize if needed
+                if total_weight > 0:
+                    for k in combined_dist:
+                        combined_dist[k] /= total_weight
+
+                    min_fsc.update_function[i][current_obs] = dict(combined_dist)
+                else:
+                    # If no valid transition was found, use the original transition
+                    min_fsc.update_function[i][current_obs] = fsc.update_function[
+                        representative_node
+                    ][current_obs]
             else:
-                min_fsc.update_function[i][obs] = node_name_to_id[next_node_name]
+                # For deterministic transitions, map to the correct partition
+                next_node_name = min_transitions[node_name][current_obs]
+                if next_node_name is None:
+                    min_fsc.update_function[i][current_obs] = None
+                else:
+                    min_fsc.update_function[i][current_obs] = node_name_to_id[
+                        next_node_name
+                    ]
 
     # Copy labels
     min_fsc.observation_labels = fsc.observation_labels
@@ -250,7 +257,7 @@ def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions):
                     break
             else:
                 # Default if not found
-                minimized_transitions[min_node][obs] = minimized_nodes[0]
+                minimized_transitions[min_node][obs] = None
 
     minimized_actions = {
         min_node: {obs: actions[group[0]][obs] for obs in observations}
@@ -444,9 +451,12 @@ if __name__ == "__main__":
                     print(f"  Partition {partition_idx}: {len(partition)} nodes")
                     print(f"    Nodes: {partition}")
             else:
-                print(
-                    "  No partitions with multiple nodes found - no minimization possible"
-                )
+                if fsc.num_nodes == minimized_fsc.num_nodes:
+                    print("  No reduction possible - FSC is already minimal")
+                    # Update the status to indicate it's already minimal
+                    result_entry["Status"] = "Already Minimal"
+                else:
+                    print("  No partitions with multiple nodes found")
 
             # Save the minimized FSC
             output_path = pickle_path.replace(".pkl", "_minimized.pkl")

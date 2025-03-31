@@ -2,6 +2,11 @@ import os
 import pickle
 import glob
 import traceback
+import subprocess
+import pandas as pd
+import re
+import time
+from datetime import datetime
 
 # Directory where FSC pickle files are stored
 base_dir = "test_outputs_saynt2_DTs"
@@ -22,9 +27,22 @@ def find_all_saynt_fscs():
     if not pickle_files:
         raise FileNotFoundError(f"No SAYNT FSC pickle files found in {base_dir}")
 
-    # Sort by file size
-    pickle_files.sort(key=lambda x: os.path.getsize(x))
-    return pickle_files
+    # Load all FSCs and sort by number of nodes instead of by name
+    fsc_sizes = []
+    for path in pickle_files:
+        try:
+            with open(path, "rb") as f:
+                fsc = pickle.load(f)
+                fsc_sizes.append((path, fsc.num_nodes))
+        except Exception as e:
+            print(f"Error loading FSC {path}: {str(e)}")
+            fsc_sizes.append((path, float("inf")))  # Put errors at the end
+
+    # Sort by size (number of nodes)
+    fsc_sizes.sort(key=lambda x: x[1])
+
+    # Return just the paths, now ordered by size
+    return [path for path, _ in fsc_sizes]
 
 
 def get_minimized_fsc_path(original_path):
@@ -32,133 +50,289 @@ def get_minimized_fsc_path(original_path):
     return original_path.replace(".pkl", "_minimized.pkl")
 
 
-def load_fsc_pair(fsc_path):
-    """Load an original FSC and its corresponding minimized version"""
-    try:
-        # Load the original FSC
-        print(f"\nLoading original FSC from: {fsc_path}")
-
-        with open(fsc_path, "rb") as f:
-            original_fsc = pickle.load(f)
-
-        if original_fsc is None:
-            print("Error: Failed to load original FSC (None returned)")
-            return None, None
-
-        print(
-            f"Original FSC loaded: {original_fsc.num_nodes} nodes, {original_fsc.num_observations} observations"
+def get_model_path(fsc_path):
+    """
+    Extract the model path from the FSC path.
+    For PAYNT verification, we only need the directory name without extensions.
+    """
+    # Extract benchmark name from FSC path
+    if "decision_trees" in fsc_path:
+        benchmark = os.path.basename(
+            os.path.dirname(os.path.dirname(os.path.dirname(fsc_path)))
         )
-        print(f"Deterministic: {original_fsc.is_deterministic}")
+    else:
+        benchmark = os.path.basename(os.path.dirname(os.path.dirname(fsc_path)))
 
-        # Look for minimized FSC
-        pre_minimized_fsc = None
-        pre_min_path = get_minimized_fsc_path(fsc_path)
+    # Default to first location if not found
+    return os.path.join("models/archive/cav23-saynt", benchmark)
 
-        if os.path.exists(pre_min_path):
-            print(f"Loading minimized FSC from: {pre_min_path}")
+
+def run_verification(model_path, original_fsc_path, minimized_fsc_path=None):
+    """Run PAYNT verification on the FSCs"""
+    results = {}
+
+    print(f"Verifying original FSC: {original_fsc_path}")
+
+    # Build command for original FSC verification
+    cmd = [
+        "python",
+        "paynt.py",
+        model_path,
+        "--verify-FSC",
+        "--import-STORM-fsc",
+        original_fsc_path,
+    ]
+
+    # Run command and capture output
+    try:
+        start_time = time.time()
+        result = subprocess.run(cmd, capture_output=True, text=True)  # 5 minute timeout
+        duration = time.time() - start_time
+
+        # Parse output to extract verification result
+        output = result.stdout + result.stderr
+        print(output)
+
+        # Extract probability value with regex
+        prob_match = re.search(r"Result: (\d+\.\d+)", output)
+        if prob_match:
+            probability = float(prob_match.group(1))
+            results["original_probability"] = probability
+        else:
+            results["original_probability"] = None
+
+        results["original_duration"] = duration
+        results["original_success"] = result.returncode == 0
+        results["original_output"] = output
+
+    except Exception as e:
+        print(f"Error verifying original FSC: {str(e)}")
+        results["original_probability"] = None
+        results["original_duration"] = None
+        results["original_success"] = False
+        results["original_output"] = str(e)
+
+    # Verify minimized FSC if available
+    if minimized_fsc_path and os.path.exists(minimized_fsc_path):
+        print(f"Verifying minimized FSC: {minimized_fsc_path}")
+
+        cmd = [
+            "python",
+            "paynt.py",
+            model_path,
+            "--verify-FSC",
+            "--import-STORM-fsc",
+            minimized_fsc_path,
+        ]
+
+        try:
+            start_time = time.time()
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            duration = time.time() - start_time
+
+            output = result.stdout + result.stderr
+            print(output)
+
+            prob_match = re.search(r"Result: (\d+\.\d+)", output)
+            if prob_match:
+                probability = float(prob_match.group(1))
+                results["minimized_probability"] = probability
+            else:
+                results["minimized_probability"] = None
+
+            results["minimized_duration"] = duration
+            results["minimized_success"] = result.returncode == 0
+            results["minimized_output"] = output
+
+        except Exception as e:
+            print(f"Error verifying minimized FSC: {str(e)}")
+            results["minimized_probability"] = None
+            results["minimized_duration"] = None
+            results["minimized_success"] = False
+            results["minimized_output"] = str(e)
+    else:
+        results["minimized_probability"] = None
+        results["minimized_duration"] = None
+        results["minimized_success"] = False
+        results["minimized_output"] = "No minimized FSC available"
+
+    return results
+
+
+def load_fscs_and_run_verification():
+    """Load FSCs, run verification on them, and store the results"""
+    print("Loading SAYNT FSC pairs and running verification...")
+    results = []
+
+    try:
+        fsc_paths = find_all_saynt_fscs()
+        print(f"Found {len(fsc_paths)} SAYNT FSC files to analyze")
+
+        for i, fsc_path in enumerate(fsc_paths):
             try:
-                with open(pre_min_path, "rb") as f:
-                    pre_minimized_fsc = pickle.load(f)
-                print(f"Minimized FSC loaded: {pre_minimized_fsc.num_nodes} nodes")
+                # Get benchmark name from path
+                if "decision_trees" in fsc_path:
+                    benchmark = os.path.basename(
+                        os.path.dirname(os.path.dirname(os.path.dirname(fsc_path)))
+                    )
+                else:
+                    benchmark = os.path.basename(
+                        os.path.dirname(os.path.dirname(fsc_path))
+                    )
 
-                # Calculate reduction
-                reduction = (
-                    1 - pre_minimized_fsc.num_nodes / original_fsc.num_nodes
-                ) * 100
-                print(f"Size reduction: {reduction:.2f}%")
+                print(f"\n--- Processing {benchmark} ({i+1}/{len(fsc_paths)}) ---")
+
+                # Load the original FSC for info
+                with open(fsc_path, "rb") as f:
+                    original_fsc = pickle.load(f)
+
+                minimized_path = get_minimized_fsc_path(fsc_path)
+                minimized_fsc = None
+
+                # Load minimized FSC if it exists
+                if os.path.exists(minimized_path):
+                    try:
+                        with open(minimized_path, "rb") as f:
+                            minimized_fsc = pickle.load(f)
+                    except Exception as e:
+                        print(f"Error loading minimized FSC: {str(e)}")
+
+                # Get model path for verification
+                model_path = get_model_path(fsc_path)
+                print(f"Using model path: {model_path}")
+
+                # Run verification on the FSCs
+                verification_results = run_verification(
+                    model_path, fsc_path, minimized_path
+                )
+
+                # Collect all results
+                result_entry = {
+                    "Benchmark": benchmark,
+                    "Original FSC Path": fsc_path,
+                    "Minimized FSC Path": (
+                        minimized_path if os.path.exists(minimized_path) else None
+                    ),
+                    "Original Nodes": original_fsc.num_nodes if original_fsc else 0,
+                    "Minimized Nodes": minimized_fsc.num_nodes if minimized_fsc else 0,
+                    "Reduction %": (
+                        (1 - minimized_fsc.num_nodes / original_fsc.num_nodes) * 100
+                        if (original_fsc and minimized_fsc)
+                        else 0
+                    ),
+                    "Original Verification Success": verification_results.get(
+                        "original_success", False
+                    ),
+                    "Original Probability": verification_results.get(
+                        "original_probability"
+                    ),
+                    "Original Verification Time (s)": verification_results.get(
+                        "original_duration"
+                    ),
+                    "Minimized Verification Success": verification_results.get(
+                        "minimized_success", False
+                    ),
+                    "Minimized Probability": verification_results.get(
+                        "minimized_probability"
+                    ),
+                    "Minimized Verification Time (s)": verification_results.get(
+                        "minimized_duration"
+                    ),
+                    "Probability Diff": (
+                        abs(
+                            verification_results.get("minimized_probability", 0)
+                            - verification_results.get("original_probability", 0)
+                        )
+                        if (
+                            verification_results.get("minimized_probability")
+                            is not None
+                            and verification_results.get("original_probability")
+                            is not None
+                        )
+                        else None
+                    ),
+                    "Speedup": (
+                        verification_results.get("original_duration", 0)
+                        / verification_results.get("minimized_duration", 1)
+                        if verification_results.get("minimized_duration", 0) > 0
+                        else 0
+                    ),
+                }
+
+                results.append(result_entry)
+
+                # Save intermediate results after each benchmark
+                save_results_to_csv(results)
+
+                print(f"Completed verification of {benchmark}")
+                print("-" * 80)
 
             except Exception as e:
-                print(f"Error loading minimized FSC: {str(e)}")
-        else:
-            print(f"No minimized FSC found at: {pre_min_path}")
+                print(f"Error processing {fsc_path}: {str(e)}")
+                traceback.print_exc()
 
-        return original_fsc, pre_minimized_fsc
+        # Final save of all results
+        save_results_to_csv(results, is_final=True)
+        print("\nVerification complete! Results saved to verification_results.csv")
 
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        traceback.print_exc()
-        return None, None
-
-
-class FSCLoader:
-    def __init__(self):
-        self.fsc_paths = find_all_saynt_fscs()
-        self.current_index = 0
-        self.fsc_data = {}  # Cache for loaded FSC data
-
-    def get_current_path(self):
-        return self.fsc_paths[self.current_index]
-
-    def get_current_basename(self):
-        """Get the benchmark name from the current path"""
-        path = self.get_current_path()
-        # Extract benchmark name from path
-        parts = path.split(os.sep)
-        if "decision_trees" in parts:
-            # Format: base_dir/benchmark/decision_trees/SAYNT/fsc.pkl
-            idx = parts.index("decision_trees")
-            return parts[idx - 1]
-        else:
-            # Format: base_dir/benchmark/SAYNT/fsc.pkl
-            return os.path.basename(os.path.dirname(os.path.dirname(path)))
-
-    def load_current_pair(self, force_reload=False):
-        """Load the current FSC pair"""
-        path = self.get_current_path()
-        if path not in self.fsc_data or force_reload:
-            self.fsc_data[path] = load_fsc_pair(path)
-        return self.fsc_data[path]
-
-    def next_pair(self):
-        """Move to the next FSC pair"""
-        if self.current_index < len(self.fsc_paths) - 1:
-            self.current_index += 1
-            return self.load_current_pair()
-        else:
-            print("Already at the last FSC pair")
-            return self.load_current_pair()
-
-    def prev_pair(self):
-        """Move to the previous FSC pair"""
-        if self.current_index > 0:
-            self.current_index -= 1
-            return self.load_current_pair()
-        else:
-            print("Already at the first FSC pair")
-            return self.load_current_pair()
-
-    def reload_current(self):
-        """Reload the current FSC pair"""
-        return self.load_current_pair(force_reload=True)
-
-
-def main():
-    print("Loading SAYNT FSC pairs (original and minimized)...")
-
-    try:
-        loader = FSCLoader()
-        print(f"Found {len(loader.fsc_paths)} SAYNT FSC files to analyze")
-
-        # Load the first pair
-        original_fsc, minimized_fsc = loader.load_current_pair()
-        benchmark = loader.get_current_basename()
-
-        print(
-            f"\n--- Loaded {benchmark} ({loader.current_index+1}/{len(loader.fsc_paths)}) ---"
-        )
-
-        # Return the loader and the FSCs - these will be available in the interactive session
-        # or when debugging with VSCode's debugger
-        return loader, original_fsc, minimized_fsc
+        return results
 
     except Exception as e:
-        print(f"Error loading FSCs: {str(e)}")
+        print(f"Error in verification process: {str(e)}")
         traceback.print_exc()
-        return None, None, None
+
+        # Try to save partial results
+        if results:
+            save_results_to_csv(results)
+            print("Saved partial results to verification_results.csv")
+
+        return results
+
+
+def save_results_to_csv(results, is_final=False):
+    """
+    Save verification results to CSV files
+    If is_final=True, creates timestamped final results
+    Otherwise, updates intermediate results files
+    """
+    if not results:
+        print("No results to save")
+        return
+
+    # For intermediate results, use fixed filenames that get overwritten
+    if not is_final:
+        results_file = "verification_results_intermediate.csv"
+        summary_file = "verification_summary_intermediate.csv"
+    else:
+        # For final results, use timestamped filenames
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        results_file = f"verification_results_{timestamp}.csv"
+        summary_file = f"verification_summary_{timestamp}.csv"
+
+    # Convert to DataFrame and save to CSV
+    df = pd.DataFrame(results)
+    df.to_csv(results_file, index=False)
+
+    # Also save a summary with just the most important columns
+    summary_columns = [
+        "Benchmark",
+        "Original Nodes",
+        "Minimized Nodes",
+        "Reduction %",
+        "Original Probability",
+        "Minimized Probability",
+        "Probability Diff",
+        "Original Verification Time (s)",
+        "Minimized Verification Time (s)",
+        "Speedup",
+    ]
+
+    if all(col in df.columns for col in summary_columns):
+        summary_df = df[summary_columns]
+        summary_df.to_csv(summary_file, index=False)
+
+    print(f"Results saved to {results_file}")
 
 
 if __name__ == "__main__":
-    loader, original_fsc, minimized_fsc = main()
-    while 1:
-        original_fsc, minimized_fsc = loader.next_pair()
-        continue
+    results = load_fscs_and_run_verification()

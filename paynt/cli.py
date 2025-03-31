@@ -1,5 +1,7 @@
 import paynt.quotient.mdp_family
 import pickle
+
+import stormpy
 from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
 from . import version
 
@@ -284,6 +286,18 @@ def setup_logger(log_path=None):
     help="maximum number of memory holes to be added to the design space",
 )
 @click.option(
+    "--verify-FSC",
+    is_flag=True,
+    default=False,
+    help="verify the FSC given by the user",
+)
+@click.option(
+    "--import-STORM-fsc",
+    type=click.Path(),
+    default=None,
+    help="path to the pickle file containing the STORM FSC",
+)
+@click.option(
     "--generated-fsc-route",
     type=click.STRING,
     help="Route to save generated FSCs to",
@@ -330,6 +344,8 @@ def paynt_run(
     memory_constraint,
     generated_fsc_route,
     export_generated_dt_fsc,
+    verify_fsc,
+    import_storm_fsc,
 ):
 
     profiler = None
@@ -395,6 +411,22 @@ def paynt_run(
     synthesizer = paynt.synthesizer.synthesizer.Synthesizer.choose_synthesizer(
         quotient, method, fsc_synthesis, storm_control
     )
+
+    if verify_fsc:
+        if import_storm_fsc is None:
+            print("Please provide STORM FSC file to verify.")
+            return
+
+        # with open(import_paynt_fsc, "rb") as f:
+        #     paynt_fsc = pickle.load(f)
+        with open(import_storm_fsc, "rb") as f:
+            storm_fsc = pickle.load(f)
+            dtmc = quotient.get_induced_dtmc_from_fsc(storm_fsc)
+            result = stormpy.model_checking(
+                dtmc, quotient.specification.optimality.formula
+            )
+            print("Result: " + str(result.at(0)))
+        return
 
     synthesizer.run(optimum_threshold)
     if paynt.cli.export_generated_DT_FSC:
