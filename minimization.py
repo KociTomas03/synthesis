@@ -235,6 +235,11 @@ def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions):
         partitions = new_partitions
         print(f"Iteration {iteration}: {len(partitions)} partitions")
 
+    # Merge partitions using wildcards (post-processing)
+    partitions = merge_partitions_with_wildcards(
+        partitions, node_transitions, actions, observations
+    )
+
     # Step 3: Construct Minimized FSC
     minimized_nodes = [f"n{i}" for i in range(len(partitions))]
 
@@ -268,6 +273,54 @@ def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions):
     return minimized_nodes, minimized_transitions, minimized_actions, partitions
 
 
+def merge_partitions_with_wildcards(
+    partitions, node_transitions, actions, observations
+):
+    merged = [list(part) for part in partitions]
+    changed = True
+    while changed:
+        changed = False
+        new_merged = []
+        skip = set()
+        for i in range(len(merged)):
+            if i in skip:
+                continue
+            merged_this = merged[i]
+            for j in range(i + 1, len(merged)):
+                if j in skip:
+                    continue
+                merged_that = merged[j]
+                # Check all pairs between merged_this and merged_that
+                compatible = True
+                for n1 in merged_this:
+                    for n2 in merged_that:
+                        for obs in observations:
+                            # Compare actions (None as wildcard)
+                            a1 = actions[n1][obs]
+                            a2 = actions[n2][obs]
+                            if a1 != a2 and a1 is not None and a2 is not None:
+                                compatible = False
+                                break
+                            # Compare transitions (None as wildcard)
+                            t1 = node_transitions[n1][obs]
+                            t2 = node_transitions[n2][obs]
+                            if t1 != t2 and t1 is not None and t2 is not None:
+                                compatible = False
+                                break
+                        if not compatible:
+                            break
+                    if not compatible:
+                        break
+                if compatible:
+                    # Merge and mark as changed
+                    merged_this += merged_that
+                    skip.add(j)
+                    changed = True
+            new_merged.append(merged_this)
+        merged = [m for idx, m in enumerate(new_merged) if idx not in skip]
+    return merged
+
+
 if __name__ == "__main__":
     import os
     import pickle
@@ -289,7 +342,9 @@ if __name__ == "__main__":
 
     # Find all FSC pickle files
     pickle_files = []
-    for fsc_type in ["SAYNT", "PAYNT"]:
+    for fsc_type in [
+        "SAYNT",
+    ]:
         pattern = os.path.join(base_dir, "*", "decision_trees", fsc_type, "fsc.pkl")
         pickle_files.extend(glob.glob(pattern))
 
@@ -315,7 +370,9 @@ if __name__ == "__main__":
     # Process all FSCs
     skipped_count = 0
     for i, pickle_path in enumerate(pickle_files):
-        benchmark_name = os.path.basename(os.path.dirname(os.path.dirname(pickle_path)))
+        benchmark_name = os.path.basename(
+            os.path.dirname(os.path.dirname(os.path.dirname(pickle_path)))
+        )
         fsc_type = (
             "SAYNT"
             if "SAYNT" in pickle_path
@@ -324,62 +381,103 @@ if __name__ == "__main__":
 
         # Check if minimized version already exists
         minimized_path = pickle_path.replace(".pkl", "_minimized.pkl")
+        wildcard_merged_path = pickle_path.replace(".pkl", "_wildcard_merged.pkl")
         if os.path.exists(minimized_path):
             print(f"\n{'='*40}")
             print(f"BENCHMARK: {benchmark_name}")
             print(f"FSC TYPE: {fsc_type}")
             print(f"PATH: {pickle_path}")
-            print(f"SKIPPING - Minimized FSC already exists at: {minimized_path}")
+            print(f"EXISTING MINIMIZED FSC at: {minimized_path}")
+            print(f"Attempting wildcard merge...")
 
-            # Load both FSCs to get data for the CSV
             try:
-                # Load the original FSC
-                with open(pickle_path, "rb") as f:
-                    original_fsc = pickle.load(f)
-
                 # Load the minimized FSC
                 with open(minimized_path, "rb") as f:
                     minimized_fsc = pickle.load(f)
 
-                # Calculate metrics
-                original_nodes = original_fsc.num_nodes
-                minimized_nodes = minimized_fsc.num_nodes
-                reduction = (1 - minimized_nodes / original_nodes) * 100
-                observations = original_fsc.num_observations
+                # Reconstruct node_transitions and actions from minimized FSC
+                min_nodes = list(range(minimized_fsc.num_nodes))
+                observations = list(range(minimized_fsc.num_observations))
+                node_transitions = {}
+                actions = {}
+                for node in min_nodes:
+                    node_transitions[node] = {}
+                    actions[node] = {}
+                    for obs in observations:
+                        node_transitions[node][obs] = minimized_fsc.update_function[
+                            node
+                        ][obs]
+                        actions[node][obs] = minimized_fsc.action_function[node][obs]
+
+                # Build initial partitions: each node is its own partition
+                partitions = [[node] for node in min_nodes]
+
+                # Run wildcard merging
+                merged_partitions = merge_partitions_with_wildcards(
+                    partitions, node_transitions, actions, observations
+                )
 
                 print(
-                    f"Original FSC: {original_nodes} nodes, {observations} observations"
+                    f"Wildcard merge reduced partitions: {len(partitions)} -> {len(merged_partitions)}"
                 )
-                print(f"Minimized FSC: {minimized_nodes} nodes")
-                print(f"Size reduction: {reduction:.2f}%")
 
-                # Add to results with actual data
-                result_entry = {
-                    "Benchmark": benchmark_name,
-                    "FSC Type": fsc_type,
-                    "Original Nodes": original_nodes,
-                    "Minimized Nodes": minimized_nodes,
-                    "Reduction %": reduction,
-                    "Observations": observations,
-                    "Multi-node Partitions": 0,  # We don't have this info without re-minimizing
-                    "Status": "Skipped",
-                }
+                # Rebuild minimized FSC with merged partitions (using integer indices)
+                node_mapping = {}
+                for i, group in enumerate(merged_partitions):
+                    for node in group:
+                        node_mapping[node] = i
+
+                merged_fsc = FSC(
+                    len(merged_partitions),
+                    minimized_fsc.num_observations,
+                    minimized_fsc.is_deterministic,
+                )
+                for i, group in enumerate(merged_partitions):
+                    rep = group[0]
+                    for obs in observations:
+                        merged_fsc.action_function[i][obs] = (
+                            minimized_fsc.action_function[rep][obs]
+                        )
+                        next_node = minimized_fsc.update_function[rep][obs]
+                        if next_node is None:
+                            merged_fsc.update_function[i][obs] = None
+                        elif isinstance(next_node, dict):
+                            # Probabilistic: map keys to new integer indices
+                            new_dist = {}
+                            for k, v in next_node.items():
+                                new_k = node_mapping.get(k, k)
+                                new_dist[new_k] = v
+                            merged_fsc.update_function[i][obs] = new_dist
+                        else:
+                            merged_fsc.update_function[i][obs] = node_mapping.get(
+                                next_node, next_node
+                            )
+                merged_fsc.observation_labels = minimized_fsc.observation_labels
+                merged_fsc.action_labels = minimized_fsc.action_labels
+
+                # Save the merged FSC
+                with open(wildcard_merged_path, "wb") as f:
+                    pickle.dump(merged_fsc, f)
+                print(f"Saved wildcard-merged FSC to: {wildcard_merged_path}")
+
             except Exception as e:
-                print(f"Error loading FSCs for metrics: {str(e)}")
-                # Fallback to empty data if loading fails
-                result_entry = {
+                print(f"Error during wildcard merging: {str(e)}")
+                import traceback
+
+                traceback.print_exc()
+            print(f"{'='*40}\n")
+            results.append(
+                {
                     "Benchmark": benchmark_name,
                     "FSC Type": fsc_type,
-                    "Original Nodes": 0,
-                    "Minimized Nodes": 0,
-                    "Reduction %": 0,
-                    "Observations": 0,
-                    "Multi-node Partitions": 0,
-                    "Status": "Skipped (Load Failed)",
+                    "Original Nodes": "N/A",
+                    "Minimized Nodes": minimized_fsc.num_nodes,
+                    "Reduction %": "N/A",
+                    "Observations": minimized_fsc.num_observations,
+                    "Multi-node Partitions": len(merged_partitions),
+                    "Status": "Wildcard Merged",
                 }
-
-            print(f"{'='*40}\n")
-            results.append(result_entry)
+            )
             skipped_count += 1
             continue
 
@@ -459,7 +557,7 @@ if __name__ == "__main__":
                     print("  No partitions with multiple nodes found")
 
             # Save the minimized FSC
-            output_path = pickle_path.replace(".pkl", "_minimized.pkl")
+            output_path = pickle_path.replace(".pkl", "_wildcard_minimized.pkl")
             with open(output_path, "wb") as f:
                 pickle.dump(minimized_fsc, f)
             print(f"Saved minimized FSC to: {output_path}\n")
