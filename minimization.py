@@ -317,7 +317,7 @@ def merge_partitions_with_wildcards(
                     skip.add(j)
                     changed = True
             new_merged.append(merged_this)
-        merged = [m for idx, m in enumerate(new_merged) if idx not in skip]
+        merged = new_merged
     return merged
 
 
@@ -345,7 +345,9 @@ if __name__ == "__main__":
     for fsc_type in [
         "SAYNT",
     ]:
-        pattern = os.path.join(base_dir, "*", "decision_trees", fsc_type, "fsc.pkl")
+        pattern = os.path.join(
+            base_dir, "grid-large-10-5", "decision_trees", fsc_type, "fsc.pkl"
+        )
         pickle_files.extend(glob.glob(pattern))
 
     if not pickle_files:
