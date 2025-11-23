@@ -47,7 +47,7 @@ def find_all_saynt_fscs():
 
 def get_minimized_fsc_path(original_path):
     """Get the path to the minimized FSC based on the original FSC path"""
-    return original_path.replace(".pkl", "_minimized.pkl")
+    return original_path.replace(".pkl", "_minimized_unreachable.pkl")
 
 
 def get_model_path(fsc_path):

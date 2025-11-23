@@ -321,6 +321,67 @@ def merge_partitions_with_wildcards(
     return merged
 
 
+def eliminate_unreachable_states(fsc, initial_state=0):
+    """
+    Removes unreachable states from an FSC object.
+    Returns a new FSC object with only reachable states.
+    Assumes initial_state is 0 unless specified.
+    """
+    num_nodes = fsc.num_nodes
+    observations = list(range(fsc.num_observations))
+
+    # BFS to find reachable states
+    reachable = set()
+    queue = [initial_state]
+    while queue:
+        node = queue.pop()
+        if node in reachable:
+            continue
+        reachable.add(node)
+        for obs in observations:
+            next_node = fsc.update_function[node][obs]
+            if next_node is None:
+                continue
+            if isinstance(next_node, dict):
+                for k in next_node:
+                    if k not in reachable:
+                        queue.append(k)
+            else:
+                if next_node not in reachable:
+                    queue.append(next_node)
+
+    # Map old indices to new indices
+    reachable = sorted(reachable)
+    node_mapping = {old: new for new, old in enumerate(reachable)}
+
+    # Create new FSC
+    new_fsc = FSC(len(reachable), fsc.num_observations, fsc.is_deterministic)
+    for new_idx, old_idx in enumerate(reachable):
+        for obs in observations:
+            # Actions
+            new_fsc.action_function[new_idx][obs] = fsc.action_function[old_idx][obs]
+            # Transitions
+            next_node = fsc.update_function[old_idx][obs]
+            if next_node is None:
+                new_fsc.update_function[new_idx][obs] = None
+            elif isinstance(next_node, dict):
+                new_dist = {}
+                for k, v in next_node.items():
+                    if k in node_mapping:
+                        new_dist[node_mapping[k]] = v
+                new_fsc.update_function[new_idx][obs] = new_dist if new_dist else None
+            else:
+                new_fsc.update_function[new_idx][obs] = node_mapping.get(
+                    next_node, None
+                )
+
+    # Copy labels
+    new_fsc.observation_labels = fsc.observation_labels
+    new_fsc.action_labels = fsc.action_labels
+
+    return new_fsc
+
+
 if __name__ == "__main__":
     import os
     import pickle
@@ -330,47 +391,40 @@ if __name__ == "__main__":
     import sys
     from datetime import datetime
 
-    # Ensure output is flushed immediately (important for redirection)
     sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
-    # Print header for the log
-    print(f"FSC MINIMIZATION LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(
+        f"FSC UNREACHABLE STATE REMOVAL LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
     print("=" * 80 + "\n")
 
-    # Directory where FSC pickle files are stored
     base_dir = "test_outputs_saynt2_DTs"
 
-    # Find all FSC pickle files
     pickle_files = []
     for fsc_type in [
         "SAYNT",
     ]:
         pattern = os.path.join(
-            base_dir, "grid-large-10-5", "decision_trees", fsc_type, "fsc.pkl"
+            base_dir, "*", "decision_trees", fsc_type, "fsc_minimized.pkl"
         )
         pickle_files.extend(glob.glob(pattern))
 
     if not pickle_files:
-        print("No FSC pickle files found. Checking alternative locations...")
-        # Try alternative locations
+        print("No minimized FSC pickle files found. Checking alternative locations...")
         for fsc_type in ["SAYNT", "PAYNT"]:
-            pattern = os.path.join(base_dir, "*", fsc_type, "fsc.pkl")
+            pattern = os.path.join(base_dir, "*", fsc_type, "fsc_minimized.pkl")
             pickle_files.extend(glob.glob(pattern))
 
     if not pickle_files:
-        print(f"No FSC pickle files found in {base_dir}")
+        print(f"No minimized FSC pickle files found in {base_dir}")
         exit(1)
 
-    print(f"Found {len(pickle_files)} FSC pickle files")
+    print(f"Found {len(pickle_files)} minimized FSC pickle files")
 
-    # Sort by file size
     pickle_files.sort(key=lambda x: os.path.getsize(x))
 
-    # Prepare results collection
     results = []
 
-    # Process all FSCs
-    skipped_count = 0
     for i, pickle_path in enumerate(pickle_files):
         benchmark_name = os.path.basename(
             os.path.dirname(os.path.dirname(os.path.dirname(pickle_path)))
@@ -380,108 +434,6 @@ if __name__ == "__main__":
             if "SAYNT" in pickle_path
             else "PAYNT" if "PAYNT" in pickle_path else "Unknown"
         )
-
-        # Check if minimized version already exists
-        minimized_path = pickle_path.replace(".pkl", "_minimized.pkl")
-        wildcard_merged_path = pickle_path.replace(".pkl", "_wildcard_merged.pkl")
-        if os.path.exists(minimized_path):
-            print(f"\n{'='*40}")
-            print(f"BENCHMARK: {benchmark_name}")
-            print(f"FSC TYPE: {fsc_type}")
-            print(f"PATH: {pickle_path}")
-            print(f"EXISTING MINIMIZED FSC at: {minimized_path}")
-            print(f"Attempting wildcard merge...")
-
-            try:
-                # Load the minimized FSC
-                with open(minimized_path, "rb") as f:
-                    minimized_fsc = pickle.load(f)
-
-                # Reconstruct node_transitions and actions from minimized FSC
-                min_nodes = list(range(minimized_fsc.num_nodes))
-                observations = list(range(minimized_fsc.num_observations))
-                node_transitions = {}
-                actions = {}
-                for node in min_nodes:
-                    node_transitions[node] = {}
-                    actions[node] = {}
-                    for obs in observations:
-                        node_transitions[node][obs] = minimized_fsc.update_function[
-                            node
-                        ][obs]
-                        actions[node][obs] = minimized_fsc.action_function[node][obs]
-
-                # Build initial partitions: each node is its own partition
-                partitions = [[node] for node in min_nodes]
-
-                # Run wildcard merging
-                merged_partitions = merge_partitions_with_wildcards(
-                    partitions, node_transitions, actions, observations
-                )
-
-                print(
-                    f"Wildcard merge reduced partitions: {len(partitions)} -> {len(merged_partitions)}"
-                )
-
-                # Rebuild minimized FSC with merged partitions (using integer indices)
-                node_mapping = {}
-                for i, group in enumerate(merged_partitions):
-                    for node in group:
-                        node_mapping[node] = i
-
-                merged_fsc = FSC(
-                    len(merged_partitions),
-                    minimized_fsc.num_observations,
-                    minimized_fsc.is_deterministic,
-                )
-                for i, group in enumerate(merged_partitions):
-                    rep = group[0]
-                    for obs in observations:
-                        merged_fsc.action_function[i][obs] = (
-                            minimized_fsc.action_function[rep][obs]
-                        )
-                        next_node = minimized_fsc.update_function[rep][obs]
-                        if next_node is None:
-                            merged_fsc.update_function[i][obs] = None
-                        elif isinstance(next_node, dict):
-                            # Probabilistic: map keys to new integer indices
-                            new_dist = {}
-                            for k, v in next_node.items():
-                                new_k = node_mapping.get(k, k)
-                                new_dist[new_k] = v
-                            merged_fsc.update_function[i][obs] = new_dist
-                        else:
-                            merged_fsc.update_function[i][obs] = node_mapping.get(
-                                next_node, next_node
-                            )
-                merged_fsc.observation_labels = minimized_fsc.observation_labels
-                merged_fsc.action_labels = minimized_fsc.action_labels
-
-                # Save the merged FSC
-                with open(wildcard_merged_path, "wb") as f:
-                    pickle.dump(merged_fsc, f)
-                print(f"Saved wildcard-merged FSC to: {wildcard_merged_path}")
-
-            except Exception as e:
-                print(f"Error during wildcard merging: {str(e)}")
-                import traceback
-
-                traceback.print_exc()
-            print(f"{'='*40}\n")
-            results.append(
-                {
-                    "Benchmark": benchmark_name,
-                    "FSC Type": fsc_type,
-                    "Original Nodes": "N/A",
-                    "Minimized Nodes": minimized_fsc.num_nodes,
-                    "Reduction %": "N/A",
-                    "Observations": minimized_fsc.num_observations,
-                    "Multi-node Partitions": len(merged_partitions),
-                    "Status": "Wildcard Merged",
-                }
-            )
-            skipped_count += 1
-            continue
 
         print(f"\n{'='*40}")
         print(f"BENCHMARK: {benchmark_name}")
@@ -496,75 +448,61 @@ if __name__ == "__main__":
             "Minimized Nodes": 0,
             "Reduction %": 0,
             "Observations": 0,
-            "Multi-node Partitions": 0,
             "Status": "Failed",
         }
 
         try:
             start_time = time.time()
 
-            # Load the FSC from pickle file
+            # Load the minimized FSC from pickle file
             with open(pickle_path, "rb") as f:
-                fsc = pickle.load(f)
-                if fsc is None:
-                    print("Error: Failed to load FSC (None returned)")
+                minimized_fsc = pickle.load(f)
+                if minimized_fsc is None:
+                    print("Error: Failed to load minimized FSC (None returned)")
                     result_entry["Status"] = "Load Failed"
                     results.append(result_entry)
                     continue
 
-            result_entry["Original Nodes"] = fsc.num_nodes
-            result_entry["Observations"] = fsc.num_observations
+            result_entry["Original Nodes"] = minimized_fsc.num_nodes
+            result_entry["Observations"] = minimized_fsc.num_observations
 
             print(
-                f"Original FSC: {fsc.num_nodes} nodes, {fsc.num_observations} observations"
+                f"Minimized FSC: {minimized_fsc.num_nodes} nodes, {minimized_fsc.num_observations} observations"
             )
-            print(f"Deterministic: {fsc.is_deterministic}\n")
+            print(f"Deterministic: {minimized_fsc.is_deterministic}\n")
 
-            # Minimize the FSC
-            print("Minimizing FSC...")
-            minimized_fsc, partitions = minimize_fsc_object(fsc)
+            # Remove unreachable states
+            minimized_fsc_unreachable_removed = eliminate_unreachable_states(
+                minimized_fsc
+            )
 
             # Calculate reduction
-            reduction = (1 - minimized_fsc.num_nodes / fsc.num_nodes) * 100
-            result_entry["Minimized Nodes"] = minimized_fsc.num_nodes
+            if minimized_fsc.num_nodes == 0:
+                reduction = 0.0
+            else:
+                reduction = (
+                    1
+                    - minimized_fsc_unreachable_removed.num_nodes
+                    / minimized_fsc.num_nodes
+                ) * 100
+            result_entry["Minimized Nodes"] = (
+                minimized_fsc_unreachable_removed.num_nodes
+            )
             result_entry["Reduction %"] = reduction
             result_entry["Status"] = "Success"
 
-            print(f"Minimization completed in {time.time() - start_time:.2f} seconds")
-            print(f"Minimized FSC: {minimized_fsc.num_nodes}")
+            print(
+                f"Unreachable state removal completed in {time.time() - start_time:.2f} seconds"
+            )
+            print(f"Reachable FSC: {minimized_fsc_unreachable_removed.num_nodes}")
             print(f"Size reduction: {reduction:.2f}%\n")
 
-            # Log detailed partition information
-            print("PARTITION DETAILS:")
-            print(f"Number of partitions: {len(partitions)}")
-
-            # Find partitions with multiple nodes
-            multi_node_partitions = [
-                (i, part) for i, part in enumerate(partitions) if len(part) > 1
-            ]
-            result_entry["Multi-node Partitions"] = len(multi_node_partitions)
-
-            print(f"Found {len(multi_node_partitions)} partitions with multiple nodes:")
-
-            if multi_node_partitions:
-                for partition_idx, partition in multi_node_partitions:
-                    print(f"  Partition {partition_idx}: {len(partition)} nodes")
-                    print(f"    Nodes: {partition}")
-            else:
-                if fsc.num_nodes == minimized_fsc.num_nodes:
-                    print("  No reduction possible - FSC is already minimal")
-                    # Update the status to indicate it's already minimal
-                    result_entry["Status"] = "Already Minimal"
-                else:
-                    print("  No partitions with multiple nodes found")
-
-            # Save the minimized FSC
-            output_path = pickle_path.replace(".pkl", "_wildcard_minimized.pkl")
+            # Save the minimized FSC (with unreachable states removed)
+            output_path = pickle_path.replace(".pkl", "_unreachable_removed.pkl")
             with open(output_path, "wb") as f:
-                pickle.dump(minimized_fsc, f)
-            print(f"Saved minimized FSC to: {output_path}\n")
+                pickle.dump(minimized_fsc_unreachable_removed, f)
+            print(f"Saved reachable-only FSC to: {output_path}\n")
 
-            # Separator for readability
             print("-" * 80 + "\n")
 
         except Exception as e:
@@ -574,20 +512,17 @@ if __name__ == "__main__":
             traceback.print_exc()
             result_entry["Status"] = f"Error: {str(e)[:50]}..."
 
-        # Add result to collection
         results.append(result_entry)
 
-    # Write summary of all results
     print("\n\n" + "=" * 80)
-    print("MINIMIZATION SUMMARY")
+    print("UNREACHABLE REMOVAL SUMMARY")
     print("=" * 80 + "\n")
 
-    # Convert results to DataFrame for easier analysis
     df = pd.DataFrame(results)
     success_count = len(df[df["Status"] == "Success"])
 
     print(f"Total FSCs processed: {len(results)}")
-    print(f"Successfully minimized: {success_count}")
+    print(f"Successfully processed: {success_count}")
     print(f"Failed: {len(results) - success_count}\n")
 
     if success_count > 0:
@@ -601,14 +536,6 @@ if __name__ == "__main__":
         print(f"Maximum size reduction: {max_reduction:.2f}%")
         print(f"Minimum size reduction: {min_reduction:.2f}%\n")
 
-        # Top 5 most minimized FSCs
-        # print("Top 5 most minimized FSCs:")
-        # top5 = successful_df.sort_values("Reduction %", ascending=False).head(5)
-        # for _, row in top5.iterrows():
-        #     print(f"  {row['Benchmark']} ({row['FSC Type']}): {row['Reduction %']:.2f}% reduction " +
-        #          f"({row['Original Nodes']} → {row['Minimized Nodes']} nodes)")
-
-        # FSCs with no reduction
         no_reduction = successful_df[successful_df["Reduction %"] == 0]
         if len(no_reduction) > 0:
             print(f"\n{len(no_reduction)} FSCs had no reduction (already minimal):")
@@ -617,8 +544,7 @@ if __name__ == "__main__":
                     f"  {row['Benchmark']} ({row['FSC Type']}): {row['Original Nodes']} nodes"
                 )
 
-    # Save results to CSV
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_file = f"minimization_results_{timestamp}.csv"
+    csv_file = f"unreachable_removal_results_{timestamp}.csv"
     df.to_csv(csv_file, index=False)
     print(f"\nDetailed results saved to {csv_file}")
