@@ -1,13 +1,14 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from paynt.quotient.fsc import FSC
 
 
-def minimize_fsc_object(fsc):
+def minimize_fsc_object(fsc, use_wildcards=True):
     """
     Minimizes a Finite State Controller using partition refinement.
     Takes an FSC object and returns a minimized FSC object.
 
     :param fsc: An instance of the FSC class
+    :param use_wildcards: If True, merge partitions using wildcards (None values). Default: True.
     :return: A minimized FSC object
     """
     # Convert the FSC structure to the format needed by the algorithm
@@ -26,9 +27,7 @@ def minimize_fsc_object(fsc):
             if isinstance(next_node, dict):
                 is_probabilistic_transitions = True
                 # Store the full distribution - don't simplify it
-                node_transitions[node][
-                    obs
-                ] = next_node.copy()  # Make a copy to avoid reference issues
+                node_transitions[node][obs] = next_node.copy()  # Make a copy to avoid reference issues
             else:
                 # For deterministic transitions, store directly
                 node_transitions[node][obs] = next_node
@@ -47,9 +46,7 @@ def minimize_fsc_object(fsc):
                     actions[node][obs] = fsc.action_function[node][obs]
 
     # Run the minimization algorithm
-    min_nodes, min_transitions, min_actions, partitions = minimize_fsc_internal(
-        fsc_nodes, observations, node_transitions, actions
-    )
+    min_nodes, min_transitions, min_actions, partitions = minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions, use_wildcards=use_wildcards)
 
     # Create a new minimized FSC
     min_fsc = FSC(len(min_nodes), fsc.num_observations, fsc.is_deterministic)
@@ -64,9 +61,7 @@ def minimize_fsc_object(fsc):
         representative_node = partition_nodes[0]
 
         for obs in observations:
-            min_fsc.action_function[i][obs] = fsc.action_function[representative_node][
-                obs
-            ]
+            min_fsc.action_function[i][obs] = fsc.action_function[representative_node][obs]
 
     # Set up the update function - FIXED to avoid nested loop bug
     for i, node_name in enumerate(min_nodes):
@@ -105,9 +100,7 @@ def minimize_fsc_object(fsc):
 
                 # Process each node in the partition
                 for orig_node in partition_nodes:
-                    for next_node, prob in fsc.update_function[orig_node][
-                        current_obs
-                    ].items():
+                    for next_node, prob in fsc.update_function[orig_node][current_obs].items():
                         # Find which partition contains next_node
                         for j, part in enumerate(partitions):
                             if next_node in part:
@@ -124,18 +117,14 @@ def minimize_fsc_object(fsc):
                     min_fsc.update_function[i][current_obs] = dict(combined_dist)
                 else:
                     # If no valid transition was found, use the original transition
-                    min_fsc.update_function[i][current_obs] = fsc.update_function[
-                        representative_node
-                    ][current_obs]
+                    min_fsc.update_function[i][current_obs] = fsc.update_function[representative_node][current_obs]
             else:
                 # For deterministic transitions, map to the correct partition
                 next_node_name = min_transitions[node_name][current_obs]
                 if next_node_name is None:
                     min_fsc.update_function[i][current_obs] = None
                 else:
-                    min_fsc.update_function[i][current_obs] = node_name_to_id[
-                        next_node_name
-                    ]
+                    min_fsc.update_function[i][current_obs] = node_name_to_id[next_node_name]
 
     # Copy labels
     min_fsc.observation_labels = fsc.observation_labels
@@ -144,7 +133,208 @@ def minimize_fsc_object(fsc):
     return min_fsc, partitions  # Also return partitions for debugging
 
 
-def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions):
+def _build_inverse(fsc_nodes, observations, node_transitions):
+    """
+    Build the inverse transition map.
+
+    inverse[obs][successor] = set of nodes that can reach successor via obs.
+    For probabilistic transitions every node in the support is included.
+    None transitions (wildcards) are excluded entirely.
+    """
+    inverse = defaultdict(lambda: defaultdict(set))
+    for node in fsc_nodes:
+        for obs in observations:
+            successor = node_transitions[node][obs]
+            if successor is None:
+                continue
+            if isinstance(successor, dict):
+                for succ_node in successor:
+                    inverse[obs][succ_node].add(node)
+            else:
+                inverse[obs][successor].add(node)
+    return inverse
+
+
+def _initial_partition(fsc_nodes, observations, actions):
+    """
+    Phase 1: group nodes by their action signature across all observations.
+    Probabilistic actions are canonicalised by sorting (action, probability) pairs.
+    Returns (blocks, block_of, block_counter).
+    """
+    sig_to_block = {}
+    block_of = {}
+    blocks = {}
+    block_counter = 0
+
+    for node in fsc_nodes:
+        sig_parts = []
+        for obs in sorted(observations):
+            a = actions[node][obs]
+            if isinstance(a, dict):
+                a_canonical = tuple(sorted(a.items()))
+            else:
+                a_canonical = a
+            sig_parts.append((obs, a_canonical))
+        sig = tuple(sig_parts)
+
+        if sig not in sig_to_block:
+            sig_to_block[sig] = block_counter
+            blocks[block_counter] = set()
+            block_counter += 1
+        b = sig_to_block[sig]
+        blocks[b].add(node)
+        block_of[node] = b
+
+    return blocks, block_of, block_counter
+
+
+def _initialize_queue(blocks, observations):
+    """Phase 2: seed the work queue with all (block_id, obs) pairs."""
+    queue = deque()
+    for block_id in blocks:
+        for obs in observations:
+            queue.append((block_id, obs))
+    return queue
+
+
+def _refine(blocks, block_of, block_counter, inverse, node_transitions, observations, queue):
+    """
+    Phase 3: Paige-Tarjan refinement loop.
+
+    For each (splitter, obs) entry, find all predecessor nodes and compute
+    their probability mass into the splitter.  Group predecessors by
+    (current_block, mass) and perform a multi-way split.  After a split,
+    enqueue all but the largest new sub-block (the standard smaller-half
+    strategy, generalised to k sub-blocks).
+    """
+    while queue:
+        splitter_id, obs = queue.popleft()
+        splitter = blocks.get(splitter_id)
+        if splitter is None:
+            continue  # block was already split and removed
+
+        # Collect all unique predecessors of every node in the splitter via obs.
+        # Using the inverse map avoids scanning all nodes.
+        all_predecessors = set()
+        for node in splitter:
+            all_predecessors.update(inverse[obs].get(node, set()))
+
+        if not all_predecessors:
+            continue
+
+        # Compute the probability mass each predecessor sends into the splitter.
+        # Collecting predecessors first (above) prevents double-counting when a
+        # node has probabilistic transitions to multiple nodes inside the splitter.
+        predecessor_mass = {}
+        for pred in all_predecessors:
+            succ = node_transitions[pred][obs]
+            if isinstance(succ, dict):
+                mass = sum(p for s, p in succ.items() if s in splitter)
+                if mass > 0:
+                    predecessor_mass[pred] = mass
+            else:
+                # Deterministic: pred is in inverse map so its successor is in splitter.
+                predecessor_mass[pred] = 1.0
+
+        if not predecessor_mass:
+            continue
+
+        # Group predecessors by (current_block, mass) for a multi-way split.
+        # Two nodes can stay together only if they are in the same block AND
+        # send identical probability mass into the splitter.
+        split_groups = defaultdict(set)
+        for node, mass in predecessor_mass.items():
+            split_groups[(block_of[node], mass)].add(node)
+
+        affected_block_ids = {block_of[n] for n in predecessor_mass}
+
+        for b in affected_block_ids:
+            original_block = blocks[b]
+
+            # Collect sub-groups that ARE predecessors (grouped by mass).
+            sub_groups = []
+            nodes_covered = set()
+            for (block_id, _mass), group in split_groups.items():
+                if block_id == b:
+                    sub_groups.append(group)
+                    nodes_covered.update(group)
+
+            # Nodes in the block that are NOT predecessors form the remainder group.
+            remainder = original_block - nodes_covered
+            if remainder:
+                sub_groups.append(remainder)
+
+            if len(sub_groups) <= 1:
+                continue  # no split needed for this block
+
+            # Create a new block for each sub-group and update membership.
+            new_block_ids = []
+            for group in sub_groups:
+                new_b = block_counter
+                block_counter += 1
+                blocks[new_b] = group
+                new_block_ids.append(new_b)
+                for node in group:
+                    block_of[node] = new_b
+            del blocks[b]
+
+            # Enqueue all but the largest sub-block (Paige-Tarjan strategy,
+            # generalised to k sub-blocks: skip the single largest one).
+            largest = max(new_block_ids, key=lambda bid: len(blocks[bid]))
+            for new_b in new_block_ids:
+                if new_b != largest:
+                    for z in observations:
+                        queue.append((new_b, z))
+
+    return blocks, block_of
+
+
+def _build_quotient(blocks, block_of, observations, node_transitions, actions):
+    """
+    Phase 4: construct the minimised FSC from block representatives.
+
+    Returns (minimized_nodes, minimized_transitions, minimized_actions, partitions)
+    in the format expected by minimize_fsc_object.
+    """
+    block_ids = sorted(blocks.keys())
+    new_id = {b: i for i, b in enumerate(block_ids)}
+    minimized_nodes = [f"n{i}" for i in range(len(block_ids))]
+
+    minimized_actions = {}
+    minimized_transitions = {}
+    partitions = []
+
+    for b in block_ids:
+        nodes = blocks[b]
+        i = new_id[b]
+        node_name = f"n{i}"
+        rep = next(iter(nodes))  # one representative per block
+
+        minimized_actions[node_name] = {}
+        minimized_transitions[node_name] = {}
+
+        for obs in observations:
+            minimized_actions[node_name][obs] = actions[rep][obs]
+            succ = node_transitions[rep][obs]
+            if succ is None:
+                minimized_transitions[node_name][obs] = None
+            elif isinstance(succ, dict):
+                # Merge probabilities for successors that collapse into the same block.
+                new_dist = defaultdict(float)
+                for s, p in succ.items():
+                    new_dist[new_id[block_of[s]]] += p
+                minimized_transitions[node_name][obs] = dict(new_dist)
+            else:
+                minimized_transitions[node_name][obs] = f"n{new_id[block_of[succ]]}"
+
+        # partitions[i] must be the list of original nodes for block i,
+        # so that minimize_fsc_object can index by i and test membership.
+        partitions.append(list(nodes))
+
+    return minimized_nodes, minimized_transitions, minimized_actions, partitions
+
+
+def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions, use_wildcards=True):
     """
     Internal minimization function that works with abstract node and observation lists.
 
@@ -152,130 +342,43 @@ def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions):
     :param observations: List of possible observations.
     :param node_transitions: Dictionary {node: {observation: next_node}}.
     :param actions: Dictionary {node: {observation: action}}.
+    :param use_wildcards: If True, merge partitions using wildcards (None values). Default: True.
     :return: Minimized FSC representation (nodes, transitions, actions).
     """
-    # Step 1: Initial Partition (group by action behavior)
-    partition = {}
-    for node in fsc_nodes:
-        # Create signatures that account for probabilistic distributions
-        try:
-            action_signatures = []
-            for obs in observations:
-                action = actions[node].get(obs)
-                if isinstance(action, dict):
-                    # For probabilistic actions, sort and convert to hashable format
-                    sorted_actions = sorted(action.items())
-                    action_signatures.append(tuple(sorted_actions))
-                else:
-                    action_signatures.append(action)
+    if not fsc_nodes:
+        return list(fsc_nodes), node_transitions, actions, []
 
-            # Make a hashable signature
-            signature = tuple(action_signatures)
-            partition.setdefault(signature, []).append(node)
-        except Exception as e:
-            print(f"Error creating signature for node {node}: {e}")
-            # Fallback: put in its own partition
-            partition.setdefault(f"error_{node}", []).append(node)
+    # Phase 1: group nodes by action signature.
+    blocks, block_of, block_counter = _initial_partition(fsc_nodes, observations, actions)
 
-    # Convert partition to list format
-    partitions = list(partition.values())
-    stable = False
+    # Phase 2: build inverse map and seed the work queue.
+    inverse = _build_inverse(fsc_nodes, observations, node_transitions)
+    queue = _initialize_queue(blocks, observations)
 
-    # Step 2: Refinement Process
-    iteration = 0
-    while not stable and iteration < 1000:  # Add iteration limit for safety
-        iteration += 1
-        stable = True
-        new_partitions = []
-
-        for group in partitions:
-            split_groups = defaultdict(list)
-
-            for node in group:
-                # Create signature based on which partition each successor belongs to
-                signature = []
-                for obs in observations:
-                    next_node_info = node_transitions[node][obs]
-
-                    if isinstance(next_node_info, dict):
-                        # For probabilistic transitions, compute distribution to partitions
-                        partition_dist = defaultdict(float)
-                        for next_node, prob in next_node_info.items():
-                            # Find which partition contains next_node
-                            for i, part in enumerate(partitions):
-                                if next_node in part:
-                                    partition_dist[i] += prob
-                                    break
-                            else:
-                                # Node not found in any partition
-                                partition_dist[-1] += prob
-
-                        # Convert to sorted tuple for hashing
-                        partition_sig = tuple(sorted(partition_dist.items()))
-                        signature.append(partition_sig)
-                    else:
-                        # For deterministic transitions, find the partition
-                        next_node = next_node_info
-                        partition_idx = -1
-                        for i, part in enumerate(partitions):
-                            if next_node in part:
-                                partition_idx = i
-                                break
-                        signature.append(partition_idx)
-
-                # Make signature hashable
-                signature_tuple = tuple(signature)
-                split_groups[signature_tuple].append(node)
-
-            if len(split_groups) > 1:
-                stable = False
-
-            new_partitions.extend(split_groups.values())
-
-        partitions = new_partitions
-        print(f"Iteration {iteration}: {len(partitions)} partitions")
-
-    # Merge partitions using wildcards (post-processing)
-    partitions = merge_partitions_with_wildcards(
-        partitions, node_transitions, actions, observations
+    # Phase 3: Paige-Tarjan refinement.
+    blocks, block_of = _refine(
+        blocks, block_of, block_counter, inverse, node_transitions, observations, queue
     )
 
-    # Step 3: Construct Minimized FSC
-    minimized_nodes = [f"n{i}" for i in range(len(partitions))]
+    # Wildcard post-processing (optional): merge blocks whose nodes only differ
+    # on observations where one side has None (wildcard) transitions/actions.
+    if use_wildcards:
+        partitions_list = [list(nodes) for nodes in blocks.values()]
+        partitions_list = merge_partitions_with_wildcards(
+            partitions_list, node_transitions, actions, observations
+        )
+        # Rebuild block structures from the merged partitions.
+        blocks = {i: set(group) for i, group in enumerate(partitions_list)}
+        block_of = {}
+        for i, group in enumerate(partitions_list):
+            for node in group:
+                block_of[node] = i
 
-    # Create mapping from original nodes to minimized nodes
-    node_mapping = {}
-    for i, group in enumerate(partitions):
-        for node in group:
-            node_mapping[node] = minimized_nodes[i]
-
-    # Create minimized transitions and actions
-    minimized_transitions = {}
-    for i, (min_node, group) in enumerate(zip(minimized_nodes, partitions)):
-        minimized_transitions[min_node] = {}
-        for obs in observations:
-            next_node = node_transitions[group[0]][obs]
-            # Find the partition that contains next_node
-            for j, part in enumerate(partitions):
-                if next_node in part:
-                    minimized_transitions[min_node][obs] = minimized_nodes[j]
-                    break
-            else:
-                # Default if not found
-                minimized_transitions[min_node][obs] = None
-
-    minimized_actions = {
-        min_node: {obs: actions[group[0]][obs] for obs in observations}
-        for min_node, group in zip(minimized_nodes, partitions)
-    }
-
-    # Return the partitions along with the other results
-    return minimized_nodes, minimized_transitions, minimized_actions, partitions
+    # Phase 4: construct and return the minimised FSC.
+    return _build_quotient(blocks, block_of, observations, node_transitions, actions)
 
 
-def merge_partitions_with_wildcards(
-    partitions, node_transitions, actions, observations
-):
+def merge_partitions_with_wildcards(partitions, node_transitions, actions, observations):
     merged = [list(part) for part in partitions]
     changed = True
     while changed:
@@ -371,9 +474,7 @@ def eliminate_unreachable_states(fsc, initial_state=0):
                         new_dist[node_mapping[k]] = v
                 new_fsc.update_function[new_idx][obs] = new_dist if new_dist else None
             else:
-                new_fsc.update_function[new_idx][obs] = node_mapping.get(
-                    next_node, None
-                )
+                new_fsc.update_function[new_idx][obs] = node_mapping.get(next_node, None)
 
     # Copy labels
     new_fsc.observation_labels = fsc.observation_labels
@@ -393,47 +494,37 @@ if __name__ == "__main__":
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), "w", buffering=1)
 
-    print(
-        f"FSC UNREACHABLE STATE REMOVAL LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    print(f"FSC MINIMIZATION LOG - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80 + "\n")
 
-    base_dir = "test_outputs_saynt2_DTs"
+    base_dir = "test_outputs_bp"
 
     pickle_files = []
-    for fsc_type in [
-        "SAYNT",
-    ]:
-        pattern = os.path.join(
-            base_dir, "*", "decision_trees", fsc_type, "fsc_minimized.pkl"
-        )
-        pickle_files.extend(glob.glob(pattern))
+    # Look for Storm FSCs
+    pattern = os.path.join(base_dir, "*", "FSCs", "STORM", "fsc.pkl")
+    pickle_files.extend(glob.glob(pattern))
 
     if not pickle_files:
-        print("No minimized FSC pickle files found. Checking alternative locations...")
-        for fsc_type in ["SAYNT", "PAYNT"]:
-            pattern = os.path.join(base_dir, "*", fsc_type, "fsc_minimized.pkl")
+        print("No FSC pickle files found. Checking alternative locations...")
+        # Fallback patterns
+        for fsc_type in ["STORM", "PAYNT"]:
+            pattern = os.path.join(base_dir, "*", "FSCs", fsc_type, "fsc.pkl")
             pickle_files.extend(glob.glob(pattern))
 
     if not pickle_files:
         print(f"No minimized FSC pickle files found in {base_dir}")
         exit(1)
 
-    print(f"Found {len(pickle_files)} minimized FSC pickle files")
+    print(f"Found {len(pickle_files)} FSC pickle files")
 
     pickle_files.sort(key=lambda x: os.path.getsize(x))
 
     results = []
 
     for i, pickle_path in enumerate(pickle_files):
-        benchmark_name = os.path.basename(
-            os.path.dirname(os.path.dirname(os.path.dirname(pickle_path)))
-        )
-        fsc_type = (
-            "SAYNT"
-            if "SAYNT" in pickle_path
-            else "PAYNT" if "PAYNT" in pickle_path else "Unknown"
-        )
+        # Extract benchmark name from path like test_outputs_bp/slip1/FSCs/STORM/fsc.pkl
+        benchmark_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(pickle_path))))
+        fsc_type = "STORM" if "STORM" in pickle_path else "PAYNT" if "PAYNT" in pickle_path else "Unknown"
 
         print(f"\n{'='*40}")
         print(f"BENCHMARK: {benchmark_name}")
@@ -454,54 +545,48 @@ if __name__ == "__main__":
         try:
             start_time = time.time()
 
-            # Load the minimized FSC from pickle file
+            # Load the FSC from pickle file
             with open(pickle_path, "rb") as f:
-                minimized_fsc = pickle.load(f)
-                if minimized_fsc is None:
-                    print("Error: Failed to load minimized FSC (None returned)")
+                fsc = pickle.load(f)
+                if fsc is None:
+                    print("Error: Failed to load FSC (None returned)")
                     result_entry["Status"] = "Load Failed"
                     results.append(result_entry)
                     continue
 
-            result_entry["Original Nodes"] = minimized_fsc.num_nodes
-            result_entry["Observations"] = minimized_fsc.num_observations
+            result_entry["Original Nodes"] = fsc.num_nodes
+            result_entry["Observations"] = fsc.num_observations
 
-            print(
-                f"Minimized FSC: {minimized_fsc.num_nodes} nodes, {minimized_fsc.num_observations} observations"
-            )
-            print(f"Deterministic: {minimized_fsc.is_deterministic}\n")
+            print(f"Original FSC: {fsc.num_nodes} nodes, {fsc.num_observations} observations")
+            print(f"Deterministic: {fsc.is_deterministic}\n")
+
+            # Minimize without wildcards (for Storm FSCs)
+            print("Running partition refinement (use_wildcards=False)...")
+            minimized_fsc, partitions = minimize_fsc_object(fsc, use_wildcards=False)
+            print(f"After minimization: {minimized_fsc.num_nodes} nodes")
 
             # Remove unreachable states
-            minimized_fsc_unreachable_removed = eliminate_unreachable_states(
-                minimized_fsc
-            )
+            print("Removing unreachable states...")
+            final_fsc = eliminate_unreachable_states(minimized_fsc)
 
             # Calculate reduction
-            if minimized_fsc.num_nodes == 0:
+            if fsc.num_nodes == 0:
                 reduction = 0.0
             else:
-                reduction = (
-                    1
-                    - minimized_fsc_unreachable_removed.num_nodes
-                    / minimized_fsc.num_nodes
-                ) * 100
-            result_entry["Minimized Nodes"] = (
-                minimized_fsc_unreachable_removed.num_nodes
-            )
+                reduction = (1 - final_fsc.num_nodes / fsc.num_nodes) * 100
+            result_entry["Minimized Nodes"] = final_fsc.num_nodes
             result_entry["Reduction %"] = reduction
             result_entry["Status"] = "Success"
 
-            print(
-                f"Unreachable state removal completed in {time.time() - start_time:.2f} seconds"
-            )
-            print(f"Reachable FSC: {minimized_fsc_unreachable_removed.num_nodes}")
+            print(f"Minimization completed in {time.time() - start_time:.2f} seconds")
+            print(f"Final FSC: {final_fsc.num_nodes} nodes")
             print(f"Size reduction: {reduction:.2f}%\n")
 
-            # Save the minimized FSC (with unreachable states removed)
-            output_path = pickle_path.replace(".pkl", "_unreachable_removed.pkl")
+            # Save the minimized FSC
+            output_path = pickle_path.replace("fsc.pkl", "fsc_minimized.pkl")
             with open(output_path, "wb") as f:
-                pickle.dump(minimized_fsc_unreachable_removed, f)
-            print(f"Saved reachable-only FSC to: {output_path}\n")
+                pickle.dump(final_fsc, f)
+            print(f"Saved minimized FSC to: {output_path}\n")
 
             print("-" * 80 + "\n")
 
@@ -540,9 +625,7 @@ if __name__ == "__main__":
         if len(no_reduction) > 0:
             print(f"\n{len(no_reduction)} FSCs had no reduction (already minimal):")
             for _, row in no_reduction.iterrows():
-                print(
-                    f"  {row['Benchmark']} ({row['FSC Type']}): {row['Original Nodes']} nodes"
-                )
+                print(f"  {row['Benchmark']} ({row['FSC Type']}): {row['Original Nodes']} nodes")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     csv_file = f"unreachable_removal_results_{timestamp}.csv"
