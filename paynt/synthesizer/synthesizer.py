@@ -263,6 +263,12 @@ class Synthesizer:
             logger.info(f"double-checking specification satisfiability: {result}")
             if self.generated_fsc_route is not None:
                 self.best_assignment.toGraph(self.generated_fsc_route)
+                if paynt.cli.export_generated_DT_FSC:
+                    converter = FSCtoDTConverter(
+                        self.quotient.assignment_to_fsc(self.best_assignment),
+                        output_dir=paynt.cli.export_generated_DT_FSC,
+                    )
+                    converter.run_dtcontrol(parallel=False)
 
         if print_stats:
             self.stat.print()

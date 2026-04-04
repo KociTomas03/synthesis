@@ -82,7 +82,7 @@ class FscFactored:
     def from_json(cls, json):
         num_nodes = json["num_nodes"]
         num_observations = json["num_observations"]
-        fsc = FSC(num_nodes,num_observations)
+        fsc = FscFactored(num_nodes,num_observations)
         fsc.action_function = json["action_function"]
         fsc.update_function = json["update_function"]
         return fsc
@@ -184,7 +184,7 @@ class FscFactored:
                     self.update_function[node][obs] = self.update_function[0][obs]
 
     def copy(self):
-        fsc = FSC(self.num_nodes, self.num_observations, self.is_deterministic)
+        fsc = FscFactored(self.num_nodes, self.num_observations, self.is_deterministic)
         fsc.action_function = [ [action for action in node] for node in self.action_function ]
         fsc.update_function = [ [update for update in node] for node in self.update_function ]
         fsc.observation_labels = self.observation_labels

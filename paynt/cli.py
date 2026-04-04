@@ -30,6 +30,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Module-level variables that are set by the CLI and accessed by other modules
+memory_constraint = None
+generated_fsc_route = None
+export_generated_DT_FSC = None
+
 
 def setup_logger(log_path=None):
     """Setup routine for logging."""
@@ -429,41 +434,78 @@ def paynt_run(
         return
 
     synthesizer.run(optimum_threshold)
+
+    # Export PAYNT FSCs if requested
+    if storm_control is not None and storm_control.export_fsc_paynt is not None:
+        # Export pure PAYNT FSC if available
+        if storm_control.latest_paynt_result_fsc is not None:
+            storm_control.export_paynt_fsc(storm_control.latest_paynt_result_fsc, "paynt")
+            logger.info("Exported PAYNT FSC")
+
+        # Export combined SAYNT FSC if available
+        if storm_control.saynt_fsc is not None:
+            storm_control.export_paynt_fsc(storm_control.saynt_fsc, "saynt_combined")
+            logger.info("Exported combined SAYNT FSC")
+
     if paynt.cli.export_generated_DT_FSC:
-        storm_fsc = storm_control.belief_controller_to_fsc(
-            storm_control.latest_storm_result, storm_control.latest_paynt_result_fsc
-        )
+        if storm_control is None:
+            logger.warning("Cannot export FSC: --storm-pomdp flag is required for --export-generated-dt-fsc")
+            return
+        # Use pre-computed saynt_fsc (combined Storm+PAYNT FSC) if available
+        storm_fsc = storm_control.saynt_fsc
         paynt_fsc = storm_control.latest_paynt_result_fsc
 
         # Create output directories if they don't exist
         os.makedirs(paynt.cli.export_generated_DT_FSC, exist_ok=True)
 
-        # Save FSC in pickle format (binary, compressed)
-        storm_pickle_path = os.path.join(
-            paynt.cli.export_generated_DT_FSC, "SAYNT", "fsc.pkl"
-        )
-        os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
-        if os.path.exists(storm_pickle_path):
-            print(
-                f"FSC file already exists at {storm_pickle_path}, skipping save operation"
-            )
+        # Save Storm FSC in pickle format (binary, compressed)
+        if storm_fsc is not None:
+            storm_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "STORM", "fsc.pkl")
+            os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
+            if os.path.exists(storm_pickle_path):
+                print(f"FSC file already exists at {storm_pickle_path}, skipping save operation")
+            else:
+                with open(storm_pickle_path, "wb") as f:
+                    pickle.dump(storm_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"Saved FSC to {storm_pickle_path} (pickle format)")
+        elif storm_control.latest_storm_result is not None:
+            # FSC conversion failed, but we have the raw Storm result - save it directly
+            logger.warning("Storm FSC conversion failed, saving raw Storm result instead")
+            storm_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "STORM", "storm_result.pkl")
+            os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
+            if os.path.exists(storm_pickle_path):
+                print(f"Storm result file already exists at {storm_pickle_path}, skipping save operation")
+            else:
+                try:
+                    with open(storm_pickle_path, "wb") as f:
+                        pickle.dump(storm_control.latest_storm_result, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    print(f"Saved raw Storm result to {storm_pickle_path} (pickle format)")
+                except Exception as e:
+                    logger.warning(f"Failed to pickle raw Storm result: {e}")
+                    # Try saving just the essential data
+                    storm_data = {
+                        "upper_bound": storm_control.latest_storm_result.upper_bound,
+                        "lower_bound": storm_control.latest_storm_result.lower_bound,
+                        "belief_mc_dot": storm_control.latest_storm_result.induced_mc_from_scheduler.to_dot(),
+                    }
+                    with open(storm_pickle_path, "wb") as f:
+                        pickle.dump(storm_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+                    print(f"Saved Storm result data to {storm_pickle_path} (pickle format)")
         else:
-            with open(storm_pickle_path, "wb") as f:
-                pickle.dump(storm_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"Saved FSC to {storm_pickle_path} (pickle format)")
+            logger.warning("Storm FSC is None and no Storm result available, skipping STORM export")
 
-        paynt_pickle_path = os.path.join(
-            paynt.cli.export_generated_DT_FSC, "PAYNT", "fsc.pkl"
-        )
-        os.makedirs(os.path.dirname(paynt_pickle_path), exist_ok=True)
-        if os.path.exists(paynt_pickle_path):
-            print(
-                f"FSC file already exists at {paynt_pickle_path}, skipping save operation"
-            )
+        # Save PAYNT FSC in pickle format
+        if paynt_fsc is not None:
+            paynt_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "PAYNT", "fsc.pkl")
+            os.makedirs(os.path.dirname(paynt_pickle_path), exist_ok=True)
+            if os.path.exists(paynt_pickle_path):
+                print(f"FSC file already exists at {paynt_pickle_path}, skipping save operation")
+            else:
+                with open(paynt_pickle_path, "wb") as f:
+                    pickle.dump(paynt_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
+                print(f"Saved FSC to {paynt_pickle_path} (pickle format)")
         else:
-            with open(paynt_pickle_path, "wb") as f:
-                pickle.dump(paynt_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
-            print(f"Saved FSC to {paynt_pickle_path} (pickle format)")
+            logger.warning("PAYNT FSC is None, skipping PAYNT export")
 
         # Save FSC to JSON
         # fsc_json_path = os.path.join(paynt.cli.export_generated_DT_FSC, "fsc.json")

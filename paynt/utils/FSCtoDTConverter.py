@@ -12,7 +12,7 @@ project_root = str(Path(__file__).resolve().parent.parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 from paynt.quotient.pomdp import PomdpQuotient
-from paynt.quotient.fsc import FSC
+from paynt.quotient.fsc import FscFactored as FSC
 
 
 class FSCtoDTConverter:
@@ -21,7 +21,7 @@ class FSCtoDTConverter:
         fsc_input,
         dtcontrol_path="dtcontrol",
         output_dir="decision_trees",
-        combined_mode=False,
+        combined_mode=True,
         is_storm=False,
     ):
         """
@@ -637,7 +637,7 @@ class FSCtoDTConverter:
             print(f"dtControl failed for memory {memory_value} with error: {e}")
             return memory_value, False
 
-    def run_dtcontrol(self, max_states=None, parallel=True, starting_memory=0):
+    def run_dtcontrol(self, max_states=None, parallel=False, starting_memory=0):
         """
         Runs dtControl on the generated CSV files for each memory value.
 
@@ -724,7 +724,7 @@ class FSCtoDTConverter:
 
     @staticmethod
     def process_existing_outputs(
-        base_dir, combined_mode=False, max_states=None, parallel=True
+        base_dir, combined_mode=False, max_states=None, parallel=False
     ):
         """
         Processes existing FSC outputs in the specified base directory.
