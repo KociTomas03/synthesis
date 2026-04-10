@@ -723,6 +723,23 @@ class FSCtoDTConverter:
         )
 
     @staticmethod
+    def count_dt_nodes(benchmark_file_path):
+        """
+        Read a dtcontrol benchmark.json and return the total node count across all trees.
+        Returns None if the file does not exist or cannot be parsed.
+        """
+        import json
+        try:
+            with open(benchmark_file_path) as f:
+                data = json.load(f)
+            total = 0
+            for entry in data.values():
+                total += entry["classifiers"]["default"]["stats"]["nodes"]
+            return total
+        except Exception:
+            return None
+
+    @staticmethod
     def process_existing_outputs(
         base_dir, combined_mode=False, max_states=None, parallel=False
     ):

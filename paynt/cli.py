@@ -1,8 +1,11 @@
 import paynt.quotient.mdp_family
 import pickle
+import time
+import json
 
 import stormpy
 from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
+from paynt.utils.minimization import minimize_fsc_object, eliminate_unreachable_states
 from . import version
 
 import paynt.utils.timer
@@ -34,6 +37,27 @@ logger = logging.getLogger(__name__)
 memory_constraint = None
 generated_fsc_route = None
 export_generated_DT_FSC = None
+
+
+def fsc_to_dict(fsc):
+    """Serializes an FscFactored object to a JSON-serializable dictionary."""
+    action_function = {}
+    update_function = {}
+    for node in range(fsc.num_nodes):
+        action_function[node] = {}
+        update_function[node] = {}
+        for obs in range(fsc.num_observations):
+            action_function[node][obs] = fsc.action_function[node][obs]
+            update_function[node][obs] = fsc.update_function[node][obs]
+    return {
+        "num_nodes": fsc.num_nodes,
+        "num_observations": fsc.num_observations,
+        "action_labels": fsc.action_labels,
+        "observation_labels": fsc.observation_labels,
+        "action_function": action_function,
+        "update_function": update_function,
+    }
+
 
 
 def setup_logger(log_path=None):
@@ -221,6 +245,12 @@ def setup_logger(log_path=None):
     help="path to output file for SAYNT inductive FSC",
 )
 @click.option(
+    "--minimize-storm-fsc",
+    is_flag=True,
+    default=False,
+    help="run Paige-Tarjan minimization on the Storm FSC after synthesis (requires --storm-pomdp)",
+)
+@click.option(
     "--export-synthesis",
     type=click.Path(),
     default=None,
@@ -337,6 +367,7 @@ def paynt_run(
     unfold_strategy_storm,
     export_fsc_storm,
     export_fsc_paynt,
+    minimize_storm_fsc,
     export_synthesis,
     mdp_discard_unreachable_choices,
     tree_depth,
@@ -431,103 +462,131 @@ def paynt_run(
                 dtmc, quotient.specification.optimality.formula
             )
             print("Result: " + str(result.at(0)))
+            print("Policy size: " + str(dtmc.nr_states))
         return
 
     synthesizer.run(optimum_threshold)
 
     # Export PAYNT FSCs if requested
     if storm_control is not None and storm_control.export_fsc_paynt is not None:
-        # Export pure PAYNT FSC if available
         if storm_control.latest_paynt_result_fsc is not None:
             storm_control.export_paynt_fsc(storm_control.latest_paynt_result_fsc, "paynt")
             logger.info("Exported PAYNT FSC")
-
-        # Export combined SAYNT FSC if available
         if storm_control.saynt_fsc is not None:
             storm_control.export_paynt_fsc(storm_control.saynt_fsc, "saynt_combined")
             logger.info("Exported combined SAYNT FSC")
 
-    if paynt.cli.export_generated_DT_FSC:
-        if storm_control is None:
-            logger.warning("Cannot export FSC: --storm-pomdp flag is required for --export-generated-dt-fsc")
-            return
-        # Use pre-computed saynt_fsc (combined Storm+PAYNT FSC) if available
+    # Export Storm FSC files (DOT + text) if requested
+    if storm_control is not None and storm_control.export_fsc_storm is not None:
+        storm_result = storm_control.latest_storm_result
         storm_fsc = storm_control.saynt_fsc
+        export_dir = storm_control.export_fsc_storm
+        os.makedirs(export_dir, exist_ok=True)
+
+        storm_control.export_storm_cutoff_schedulers(storm_result)
+
+
+        if storm_fsc is not None:
+            storm_control.export_paynt_fsc(storm_fsc, "storm_as_fsc")
+            logger.info("Exported Storm belief FSC")
+
+    if storm_control is not None and export_generated_dt_fsc is not None:
+        os.makedirs(export_generated_dt_fsc, exist_ok=True)
+        results = {}
+
+        # Call belief_controller_to_fsc fresh at export time (same as old working export code)
+        # so we always get the FSC built from the final synthesis result, not a cached value.
+        try:
+            storm_fsc = storm_control.belief_controller_to_fsc(
+                storm_control.latest_storm_result, storm_control.latest_paynt_result_fsc
+            )
+        except Exception as e:
+            logger.warning(f"Failed to build Storm FSC for export: {e}")
+            storm_fsc = None
         paynt_fsc = storm_control.latest_paynt_result_fsc
 
-        # Create output directories if they don't exist
-        os.makedirs(paynt.cli.export_generated_DT_FSC, exist_ok=True)
-
-        # Save Storm FSC in pickle format (binary, compressed)
+        # --- Storm FSC metrics ---
+        storm_result = storm_control.latest_storm_result
         if storm_fsc is not None:
-            storm_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "STORM", "fsc.pkl")
-            os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
-            if os.path.exists(storm_pickle_path):
-                print(f"FSC file already exists at {storm_pickle_path}, skipping save operation")
-            else:
-                with open(storm_pickle_path, "wb") as f:
-                    pickle.dump(storm_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
-                print(f"Saved FSC to {storm_pickle_path} (pickle format)")
-        elif storm_control.latest_storm_result is not None:
-            # FSC conversion failed, but we have the raw Storm result - save it directly
-            logger.warning("Storm FSC conversion failed, saving raw Storm result instead")
-            storm_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "STORM", "storm_result.pkl")
-            os.makedirs(os.path.dirname(storm_pickle_path), exist_ok=True)
-            if os.path.exists(storm_pickle_path):
-                print(f"Storm result file already exists at {storm_pickle_path}, skipping save operation")
-            else:
-                try:
-                    with open(storm_pickle_path, "wb") as f:
-                        pickle.dump(storm_control.latest_storm_result, f, protocol=pickle.HIGHEST_PROTOCOL)
-                    print(f"Saved raw Storm result to {storm_pickle_path} (pickle format)")
-                except Exception as e:
-                    logger.warning(f"Failed to pickle raw Storm result: {e}")
-                    # Try saving just the essential data
-                    storm_data = {
-                        "upper_bound": storm_control.latest_storm_result.upper_bound,
-                        "lower_bound": storm_control.latest_storm_result.lower_bound,
-                        "belief_mc_dot": storm_control.latest_storm_result.induced_mc_from_scheduler.to_dot(),
-                    }
-                    with open(storm_pickle_path, "wb") as f:
-                        pickle.dump(storm_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-                    print(f"Saved Storm result data to {storm_pickle_path} (pickle format)")
-        else:
-            logger.warning("Storm FSC is None and no Storm result available, skipping STORM export")
+            results["storm_num_nodes"] = storm_fsc.num_nodes
+            results["storm_belief_controller_size"] = storm_control.belief_controller_size
+            results["storm_value"] = storm_control.storm_bounds
 
-        # Save PAYNT FSC in pickle format
+            if storm_result is not None:
+                results["storm_fsc_size"] = storm_control.get_fsc_comparable_size(storm_fsc, storm_result)
+
+            with open(os.path.join(export_generated_dt_fsc, "storm_fsc.json"), "w") as f:
+                json.dump(fsc_to_dict(storm_fsc), f, indent=2)
+            with open(os.path.join(export_generated_dt_fsc, "storm_fsc.pkl"), "wb") as f:
+                pickle.dump(storm_fsc, f)
+
+            # Minimization of Storm FSC
+            if minimize_storm_fsc:
+                # --- Paige-Tarjan only (no wildcard merge) ---
+                logger.info("Running FSC minimization (no wildcards)...")
+                t0 = time.perf_counter()
+                minimized_fsc, _, initial_state = minimize_fsc_object(storm_fsc, use_wildcards=False)
+                minimized_fsc = eliminate_unreachable_states(minimized_fsc, initial_state=initial_state)
+                results["minimized_time_s"] = round(time.perf_counter() - t0, 4)
+                results["minimized_num_nodes"] = minimized_fsc.num_nodes
+                if storm_result is not None:
+                    results["minimized_fsc_size"] = storm_control.get_fsc_comparable_size(minimized_fsc, storm_result)
+                logger.info(
+                    f"Minimization done: {storm_fsc.num_nodes} -> {minimized_fsc.num_nodes} nodes"
+                    f" in {results['minimized_time_s']}s"
+                )
+                with open(os.path.join(export_generated_dt_fsc, "minimized_fsc.json"), "w") as f:
+                    json.dump(fsc_to_dict(minimized_fsc), f, indent=2)
+                with open(os.path.join(export_generated_dt_fsc, "minimized_fsc.pkl"), "wb") as f:
+                    pickle.dump(minimized_fsc, f)
+
+                # --- Paige-Tarjan + wildcard merge ---
+                logger.info("Running FSC minimization (with wildcard merge)...")
+                t0 = time.perf_counter()
+                minimized_wc_fsc, _, initial_state_wc = minimize_fsc_object(storm_fsc, use_wildcards=True)
+                minimized_wc_fsc = eliminate_unreachable_states(minimized_wc_fsc, initial_state=initial_state_wc)
+                results["minimized_wc_time_s"] = round(time.perf_counter() - t0, 4)
+                results["minimized_wc_num_nodes"] = minimized_wc_fsc.num_nodes
+                if storm_result is not None:
+                    results["minimized_wc_fsc_size"] = storm_control.get_fsc_comparable_size(minimized_wc_fsc, storm_result)
+                logger.info(
+                    f"Wildcard minimization done: {storm_fsc.num_nodes} -> {minimized_wc_fsc.num_nodes} nodes"
+                    f" in {results['minimized_wc_time_s']}s"
+                )
+                with open(os.path.join(export_generated_dt_fsc, "minimized_wc_fsc.json"), "w") as f:
+                    json.dump(fsc_to_dict(minimized_wc_fsc), f, indent=2)
+                with open(os.path.join(export_generated_dt_fsc, "minimized_wc_fsc.pkl"), "wb") as f:
+                    pickle.dump(minimized_wc_fsc, f)
+        else:
+            logger.warning("Storm FSC is None, skipping Storm metrics")
+
+        # --- PAYNT FSC: DT conversion ---
         if paynt_fsc is not None:
-            paynt_pickle_path = os.path.join(paynt.cli.export_generated_DT_FSC, "PAYNT", "fsc.pkl")
-            os.makedirs(os.path.dirname(paynt_pickle_path), exist_ok=True)
-            if os.path.exists(paynt_pickle_path):
-                print(f"FSC file already exists at {paynt_pickle_path}, skipping save operation")
-            else:
-                with open(paynt_pickle_path, "wb") as f:
-                    pickle.dump(paynt_fsc, f, protocol=pickle.HIGHEST_PROTOCOL)
-                print(f"Saved FSC to {paynt_pickle_path} (pickle format)")
+            results["paynt_value"] = storm_control.paynt_bounds
+            results["paynt_fsc_size"] = storm_control.paynt_fsc_size
+
+            with open(os.path.join(export_generated_dt_fsc, "paynt_fsc.json"), "w") as f:
+                json.dump(fsc_to_dict(paynt_fsc), f, indent=2)
+
+            paynt_dt_dir = os.path.join(export_generated_dt_fsc, "PAYNT")
+            logger.info("Running DT conversion for PAYNT FSC...")
+            converter = FSCtoDTConverter(paynt_fsc, output_dir=paynt_dt_dir, is_storm=False)
+            t0 = time.perf_counter()
+            converter.run_dtcontrol()
+            results["paynt_dt_conversion_time_s"] = round(time.perf_counter() - t0, 4)
+            benchmark_path = os.path.join(paynt_dt_dir, "benchmark.json")
+            results["paynt_dt_nodes"] = FSCtoDTConverter.count_dt_nodes(benchmark_path)
+            logger.info(
+                f"DT conversion done in {results['paynt_dt_conversion_time_s']}s,"
+                f" DT nodes: {results['paynt_dt_nodes']}"
+            )
         else:
-            logger.warning("PAYNT FSC is None, skipping PAYNT export")
+            logger.warning("PAYNT FSC is None, skipping DT conversion")
 
-        # Save FSC to JSON
-        # fsc_json_path = os.path.join(paynt.cli.export_generated_DT_FSC, "fsc.json")
-        # with open(fsc_json_path, "w") as f:
-        #     f.write(fsc.__str__())
-        # print(f"Saved FSC to {fsc_json_path}")
-
-        # separate_converter = FSCtoDTConverter(
-        #     fsc,
-        #     output_dir=os.path.join(paynt.cli.export_generated_DT_FSC, "separate"),
-        #     is_storm=True,
-        #     combined_mode=False,
-        # )
-        # separate_converter.run_dtcontrol()
-
-        # combined_converter = FSCtoDTConverter(
-        #     fsc,
-        #     output_dir=os.path.join(paynt.cli.export_generated_DT_FSC, "combined"),
-        #     is_storm=True,
-        #     combined_mode=True,
-        # )
-        # combined_converter.run_dtcontrol()
+        results_path = os.path.join(export_generated_dt_fsc, "results.json")
+        with open(results_path, "w") as f:
+            json.dump(results, f, indent=2)
+        logger.info(f"Results saved to {results_path}")
 
     if profiling:
         profiler.disable()

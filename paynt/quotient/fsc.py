@@ -190,3 +190,6 @@ class FscFactored:
         fsc.observation_labels = self.observation_labels
         fsc.action_labels = self.action_labels
         return fsc
+
+#for backward compatibility
+FSC=FscFactored

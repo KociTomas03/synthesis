@@ -173,107 +173,6 @@ class StormPOMDPControl:
         )
         # Store the Storm result first (before any export that might fail)
         self.store_storm_result(result)
-
-        if self.export_fsc_storm is not None:
-            self.export_storm_cutoff_schedulers(result)
-            makedirs(self.export_fsc_storm, exist_ok=True)
-
-            # Convert Storm result to FSC and export it
-            try:
-                storm_as_FSC = self.belief_controller_to_fsc(result, self.latest_paynt_result_fsc)
-            except Exception as e:
-                logger.warning(f"Failed to convert Storm result to FSC for export: {e}")
-                storm_as_FSC = None
-
-            if storm_as_FSC is None:
-                logger.warning("Skipping Storm FSC text export due to conversion failure")
-            else:
-                # Export Storm FSC as comprehensive text file
-                storm_fsc_text_path = os.path.join(self.export_fsc_storm, "storm_fsc.txt")
-                with open(storm_fsc_text_path, "w") as f:
-                    # Header
-                    f.write(f"Storm FSC (converted from belief MC)\n")
-                    f.write("=" * 80 + "\n")
-                    f.write(f"Nodes: {storm_as_FSC.num_nodes}\n")
-                    f.write(f"Observations: {len(storm_as_FSC.observation_labels)}\n")
-                    if hasattr(storm_as_FSC, "action_labels") and storm_as_FSC.action_labels:
-                        f.write(f"Actions: {len(storm_as_FSC.action_labels)}\n")
-                    f.write("=" * 80 + "\n\n")
-
-                    # Observation labels
-                    f.write("Observation Labels:\n")
-                    f.write("-" * 40 + "\n")
-                    for obs_idx, obs_label in enumerate(storm_as_FSC.observation_labels):
-                        f.write(f"  Obs {obs_idx}: {obs_label}\n")
-                    f.write("\n")
-
-                    # Action labels
-                    if hasattr(storm_as_FSC, "action_labels") and storm_as_FSC.action_labels:
-                        f.write("Action Labels:\n")
-                        f.write("-" * 40 + "\n")
-                        for act_idx, act_label in enumerate(storm_as_FSC.action_labels):
-                            f.write(f"  Act {act_idx}: {act_label}\n")
-                        f.write("\n")
-
-                    # FSC structure
-                    f.write("FSC Structure:\n")
-                    f.write("=" * 80 + "\n\n")
-                    for node in range(storm_as_FSC.num_nodes):
-                        f.write(f"Node {node}{'  (Initial)' if node == 0 else ''}:\n")
-                        f.write("-" * 80 + "\n")
-                        for obs in range(len(storm_as_FSC.observation_labels)):
-                            obs_label = storm_as_FSC.observation_labels[obs]
-                            f.write(f"  {obs_label}:\n")
-
-                            if storm_as_FSC.action_function[node][obs] is not None:
-                                actions = storm_as_FSC.action_function[node][obs]
-                                if isinstance(actions, dict):
-                                    f.write(f"    Action: {{")
-                                    action_strs = []
-                                    for action_idx, prob in sorted(actions.items()):
-                                        action_label = (
-                                            storm_as_FSC.action_labels[action_idx] if action_idx < len(storm_as_FSC.action_labels) else f"Act{action_idx}"
-                                        )
-                                        action_strs.append(f"[{prob:.4f}: {action_label}]")
-                                    f.write(", ".join(action_strs))
-                                    f.write("}\n")
-                                else:
-                                    action_label = storm_as_FSC.action_labels[actions] if actions < len(storm_as_FSC.action_labels) else f"Act{actions}"
-                                    f.write(f"    Action: {action_label}\n")
-                            else:
-                                f.write(f"    Action: None\n")
-
-                            if storm_as_FSC.update_function[node][obs] is not None:
-                                updates = storm_as_FSC.update_function[node][obs]
-                                if isinstance(updates, dict):
-                                    f.write(f"    Next:   {{")
-                                    update_strs = []
-                                    for next_node, prob in sorted(updates.items()):
-                                        update_strs.append(f"[{prob:.4f}: N{next_node}]")
-                                    f.write(", ".join(update_strs))
-                                    f.write("}\n")
-                                else:
-                                    f.write(f"    Next:   N{updates}\n")
-                            else:
-                                f.write(f"    Next:   None\n")
-                        f.write("\n")
-
-                logger.info(f"Exported Storm FSC text to {storm_fsc_text_path}")
-
-            # Export DOT file from Storm's belief MC
-            dot_content = result.induced_mc_from_scheduler.to_dot()
-            with open(self.export_fsc_storm + "/storm.fsc", "w") as text_file:
-                print(dot_content, file=text_file)
-                text_file.close()
-
-            # Generate PDF from DOT content
-            try:
-                dot_graph = graphviz.Source(dot_content)
-                output_base = os.path.join(self.export_fsc_storm, "storm")
-                dot_graph.render(output_base, format="pdf", cleanup=False)
-                logger.info(f"Generated PDF visualization: {output_base}.pdf")
-            except Exception as e:
-                logger.warning(f"Failed to render storm.fsc as PDF: {e}")
         if self.get_result is not None:
             # TODO not important for the paper but it would be nice to have correct FSC here as well
             if self.storm_options == "overapp":
@@ -357,24 +256,6 @@ class StormPOMDPControl:
                 flush=True,
             )
 
-            if self.export_fsc_storm is not None:
-                makedirs(self.export_fsc_storm, exist_ok=True)
-
-                # Export DOT file
-                dot_content = result.induced_mc_from_scheduler.to_dot()
-                with open(self.export_fsc_storm + "/storm.fsc", "w") as text_file:
-                    print(dot_content, file=text_file)
-                    text_file.close()
-
-                # Generate PDF from DOT content
-                try:
-                    dot_graph = graphviz.Source(dot_content)
-                    output_base = os.path.join(self.export_fsc_storm, "storm")
-                    dot_graph.render(output_base, format="pdf", cleanup=False)
-                    logger.info(f"Generated PDF visualization: {output_base}.pdf")
-                except Exception as e:
-                    logger.warning(f"Failed to render storm.fsc as PDF: {e}")
-
             self.store_storm_result(result)
             self.parse_results(self.quotient)
             self.update_data()
@@ -450,24 +331,6 @@ class StormPOMDPControl:
               \nValue = {value} | Time elapsed = {round(self.saynt_timer.read(),1)}s | FSC size = {size}\n",
             flush=True,
         )
-
-        if self.export_fsc_storm is not None:
-            makedirs(self.export_fsc_storm, exist_ok=True)
-
-            # Export DOT file
-            dot_content = result.induced_mc_from_scheduler.to_dot()
-            with open(self.export_fsc_storm + "/storm.fsc", "w") as text_file:
-                print(dot_content, file=text_file)
-                text_file.close()
-
-            # Generate PDF from DOT content
-            try:
-                dot_graph = graphviz.Source(dot_content)
-                output_base = os.path.join(self.export_fsc_storm, "storm")
-                dot_graph.render(output_base, format="pdf", cleanup=False)
-                logger.info(f"Generated PDF visualization: {output_base}.pdf")
-            except Exception as e:
-                logger.warning(f"Failed to render storm.fsc as PDF: {e}")
 
         self.store_storm_result(result)
         self.parse_results(self.quotient)
@@ -1100,6 +963,54 @@ class StormPOMDPControl:
             randomized_schedulers_size += sum(list([len(support) for support in observation_actions.values()])) * 3
 
         result_size = non_frontier_states + belief_mc.nr_transitions + fsc_size + randomized_schedulers_size
+
+        return result_size
+
+    def get_fsc_comparable_size(self, fsc, storm_result):
+        # Computes a size metric for an FSC object directly, comparable between
+        # the original and minimized Storm FSC.
+        # FORMULA: N + T + size(Fc)
+        # N   - number of FSC nodes (analogous to non-frontier states in belief MC)
+        # T   - number of FSC transitions (non-None update_function entries)
+        # Fc  - used cut-off schedulers (same for original and minimized FSC)
+
+        num_nodes = fsc.num_nodes
+
+        fsc_transitions = 0
+        for node in range(fsc.num_nodes):
+            for obs in range(fsc.num_observations):
+                entry = fsc.update_function[node][obs]
+                if entry is None:
+                    continue
+                if isinstance(entry, dict):
+                    fsc_transitions += len(entry)
+                else:
+                    fsc_transitions += 1
+
+        used_randomized_schedulers = []
+        belief_mc = storm_result.induced_mc_from_scheduler
+        for state in belief_mc.states:
+            if "cutoff" in state.labels:
+                for label in state.labels:
+                    if "sched_" in label:
+                        _, scheduler_index = label.split("_")
+                        if int(scheduler_index) not in used_randomized_schedulers:
+                            used_randomized_schedulers.append(int(scheduler_index))
+
+        randomized_schedulers_size = 0
+        for index in used_randomized_schedulers:
+            observation_actions = {x: [] for x in range(self.quotient.observations)}
+            rand_scheduler = storm_result.cutoff_schedulers[index]
+            for state in range(self.quotient.pomdp.nr_states):
+                choice_string = str(rand_scheduler.get_choice(state).get_choice())
+                actions = self.parse_choice_string(choice_string)
+                observation = self.quotient.pomdp.get_observation(state)
+                for action in actions:
+                    if action not in observation_actions[observation]:
+                        observation_actions[observation].append(action)
+            randomized_schedulers_size += sum(list([len(support) for support in observation_actions.values()])) * 3
+
+        result_size = num_nodes + fsc_transitions + randomized_schedulers_size
 
         return result_size
 
