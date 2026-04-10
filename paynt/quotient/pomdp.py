@@ -707,7 +707,7 @@ class PomdpQuotient(paynt.quotient.quotient.Quotient):
     def assignment_to_fsc(self, assignment):
         assert assignment.size == 1, "expected family of size 1"
         num_nodes = max(self.observation_memory_size)
-        fsc = paynt.quotient.fsc.FSC(num_nodes, self.observations, is_deterministic=True)
+        fsc = paynt.quotient.fsc.FscFactored(num_nodes, self.observations, is_deterministic=True)
         fsc.observation_labels = self.observation_labels
 
         # collect action labels
@@ -757,8 +757,11 @@ class PomdpQuotient(paynt.quotient.quotient.Quotient):
 
         # compute the state space for the induced dtmc
         dtmc_states_map = {}
-        state_queue = [(self.pomdp.initial_states[0],0)]
-        dtmc_states_map[len(dtmc_states_map)] = (self.pomdp.initial_states[0],0)
+        dtmc_states_inverse = {}  # (pomdp_state, memory) -> dtmc_state index
+        initial_pair = (self.pomdp.initial_states[0], 0)
+        dtmc_states_map[0] = initial_pair
+        dtmc_states_inverse[initial_pair] = 0
+        state_queue = [initial_pair]
 
         while state_queue:
             current_state_memory_pair = state_queue.pop()
@@ -781,10 +784,12 @@ class PomdpQuotient(paynt.quotient.quotient.Quotient):
 
                     for entry in self.pomdp.transition_matrix.get_row(choice_index):
                         next_state = entry.column
-                        next_state_memory_pair = (next_state,selected_update)
-                        if next_state_memory_pair not in dtmc_states_map.values():
+                        next_state_memory_pair = (next_state, selected_update)
+                        if next_state_memory_pair not in dtmc_states_inverse:
+                            new_index = len(dtmc_states_map)
+                            dtmc_states_map[new_index] = next_state_memory_pair
+                            dtmc_states_inverse[next_state_memory_pair] = new_index
                             state_queue.append(next_state_memory_pair)
-                            dtmc_states_map[len(dtmc_states_map)] = next_state_memory_pair
 
 
         # construct the transition matrix
@@ -804,7 +809,7 @@ class PomdpQuotient(paynt.quotient.quotient.Quotient):
                     state_action_rewards[reward_name].append(0)
                 continue
 
-            next_state_prob_map = {state:0 for state in dtmc_states_map.keys()}
+            next_state_prob_map = {}
 
             current_reward = {name:0 for name in self.pomdp.reward_models.keys()}
 
@@ -817,22 +822,18 @@ class PomdpQuotient(paynt.quotient.quotient.Quotient):
                     current_reward[reward_name] += reward_model.state_action_rewards[choice_index]*action_prob
 
                 for selected_update, update_prob in selected_updates.items():
-                    
 
                     for entry in self.pomdp.transition_matrix.get_row(choice_index):
                         next_state = entry.column
-                        next_state_memory_pair = (next_state,selected_update)
-                        next_state_index = [index for index,state in dtmc_states_map.items() if state == next_state_memory_pair]
-                        assert len(next_state_index) == 1, "expected unique state for given state memory pair"
-                        next_state_index = next_state_index[0]
-                        next_state_prob_map[next_state_index] += entry.value()*action_prob*update_prob
+                        next_state_memory_pair = (next_state, selected_update)
+                        next_state_index = dtmc_states_inverse[next_state_memory_pair]
+                        prob = entry.value() * action_prob * update_prob
+                        next_state_prob_map[next_state_index] = next_state_prob_map.get(next_state_index, 0.0) + prob
 
             for reward_name in self.pomdp.reward_models.keys():
                 state_action_rewards[reward_name].append(current_reward[reward_name])
 
-                
-
-            for next_state_index, next_state_prob in next_state_prob_map.items():
+            for next_state_index, next_state_prob in sorted(next_state_prob_map.items()):
                 dtmc_tm_builder.add_next_value(dtmc_state, next_state_index, next_state_prob)
 
         dtmc_tm = dtmc_tm_builder.build()
