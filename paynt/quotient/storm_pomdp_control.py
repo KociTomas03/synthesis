@@ -841,7 +841,7 @@ class StormPOMDPControl:
         paynt_cutoff_states = 0
 
         for state in belief_mc.states:
-            if "finite_mem" in state.labels:
+            if any("finite_mem" in lbl for lbl in state.labels):
                 uses_fsc = True
                 paynt_cutoff_states += 1
             else:
@@ -857,8 +857,7 @@ class StormPOMDPControl:
         fsc_node = 1
         belief_mc_nodes_map = []
         for state in belief_mc.states:
-            # Check for exact "finite_mem" label (consistent with paynt_cutoff_states counting)
-            if "finite_mem" in state.labels:
+            if any("finite_mem" in lbl for lbl in state.labels):
                 belief_mc_nodes_map.append(None)
             else:
                 belief_mc_nodes_map.append(fsc_node)
@@ -868,6 +867,7 @@ class StormPOMDPControl:
             [x for x in belief_mc_nodes_map if x is not None]
         ), f"{fsc_nodes-1} != {len([x for x in belief_mc_nodes_map if x is not None])}"
 
+        first_fsc_node = None
         if uses_fsc:
             fsc_nodes += paynt_fsc.num_nodes
             first_fsc_node = belief_mc.nr_states - paynt_cutoff_states + 1
@@ -908,8 +908,7 @@ class StormPOMDPControl:
             succ_observation = None
             fsc_switch = None
             cutoff_switch = None
-            # Check for exact "finite_mem" label (consistent with uses_fsc check)
-            fsc_switch = "finite_mem" in init_state_labels
+            fsc_switch = any("finite_mem" in lbl for lbl in init_state_labels)
             for label in init_state_labels:
                 if "[" in label:
                     # observation based on prism observables
@@ -923,7 +922,7 @@ class StormPOMDPControl:
                     succ_observation = int(succ_observation)
             assert not (fsc_switch and (cutoff_switch is not None)), "Belief MC state has both FSC and Storm cutoff scheduler"
             assert succ_observation is not None, "Belief MC state has no observation"
-            if fsc_switch:
+            if fsc_switch and first_fsc_node is not None:
                 result_fsc.action_function[0][succ_observation] = result_fsc.action_function[first_fsc_node][succ_observation]
                 result_fsc.update_function[0][succ_observation] = result_fsc.update_function[first_fsc_node][succ_observation]
             elif cutoff_switch is not None:
@@ -1002,8 +1001,7 @@ class StormPOMDPControl:
                     fsc_switch = None
                     cutoff_switch = None
                     succ_labels = belief_mc.labeling.get_labels_of_state(succ)
-                    # Check for exact "finite_mem" label (consistent with uses_fsc check)
-                    fsc_switch = "finite_mem" in succ_labels
+                    fsc_switch = any("finite_mem" in lbl for lbl in succ_labels)
                     for label in succ_labels:
                         if "[" in label:
                             # observation based on prism observables
@@ -1017,7 +1015,7 @@ class StormPOMDPControl:
                             succ_observation = int(succ_observation)
                     assert not (fsc_switch and (cutoff_switch is not None)), "Belief MC state has both FSC and Storm cutoff scheduler"
                     assert succ_observation is not None, "Belief MC state has no observation"
-                    if fsc_switch:
+                    if fsc_switch and first_fsc_node is not None:
                         result_fsc.action_function[node_id][succ_observation] = result_fsc.action_function[first_fsc_node][succ_observation]
                         result_fsc.update_function[node_id][succ_observation] = result_fsc.update_function[first_fsc_node][succ_observation]
                     elif cutoff_switch is not None:
