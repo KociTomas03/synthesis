@@ -971,7 +971,8 @@ class StormPOMDPControl:
         # the original and minimized Storm FSC.
         # FORMULA: N + T + size(Fc)
         # N   - number of FSC nodes (analogous to non-frontier states in belief MC)
-        # T   - number of FSC transitions (non-None update_function entries)
+        # T   - number of non-None (node, observation) entries across both
+        #       action_function and update_function
         # Fc  - used cut-off schedulers (same for original and minimized FSC)
 
         num_nodes = fsc.num_nodes
@@ -979,13 +980,18 @@ class StormPOMDPControl:
         fsc_transitions = 0
         for node in range(fsc.num_nodes):
             for obs in range(fsc.num_observations):
-                entry = fsc.update_function[node][obs]
-                if entry is None:
-                    continue
-                if isinstance(entry, dict):
-                    fsc_transitions += len(entry)
-                else:
-                    fsc_transitions += 1
+                action_entry = fsc.action_function[node][obs]
+                if action_entry is not None:
+                    if isinstance(action_entry, dict):
+                        fsc_transitions += len(action_entry)
+                    else:
+                        fsc_transitions += 1
+                update_entry = fsc.update_function[node][obs]
+                if update_entry is not None:
+                    if isinstance(update_entry, dict):
+                        fsc_transitions += len(update_entry)
+                    else:
+                        fsc_transitions += 1
 
         used_randomized_schedulers = []
         belief_mc = storm_result.induced_mc_from_scheduler
