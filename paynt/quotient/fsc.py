@@ -193,3 +193,50 @@ class FscFactored:
 
 #for backward compatibility
 FSC=FscFactored
+
+
+def fsc_to_dict(fsc):
+    """Serializes an FscFactored object to a JSON-serializable dictionary."""
+    action_function = {}
+    update_function = {}
+    for node in range(fsc.num_nodes):
+        action_function[node] = {}
+        update_function[node] = {}
+        for obs in range(fsc.num_observations):
+            action_function[node][obs] = fsc.action_function[node][obs]
+            update_function[node][obs] = fsc.update_function[node][obs]
+    return {
+        "num_nodes": fsc.num_nodes,
+        "num_observations": fsc.num_observations,
+        "action_labels": fsc.action_labels,
+        "observation_labels": fsc.observation_labels,
+        "action_function": action_function,
+        "update_function": update_function,
+    }
+
+
+def load_fsc_from_json(path):
+    """Reconstructs an FscFactored object from a fsc_to_dict JSON file."""
+    with open(path) as f:
+        d = json.load(f)
+    fsc = FscFactored(d["num_nodes"], d["num_observations"])
+    fsc.action_labels = d.get("action_labels")
+    fsc.observation_labels = d.get("observation_labels")
+    # is_deterministic is not stored in JSON — infer from action_function values
+    fsc.is_deterministic = not any(
+        isinstance(d["action_function"][str(n)][str(o)], dict)
+        for n in range(fsc.num_nodes)
+        for o in range(fsc.num_observations)
+        if d["action_function"][str(n)][str(o)] is not None
+    )
+    for node in range(fsc.num_nodes):
+        for obs in range(fsc.num_observations):
+            action_val = d["action_function"][str(node)][str(obs)]
+            if isinstance(action_val, dict):
+                action_val = {int(k): v for k, v in action_val.items()}
+            fsc.action_function[node][obs] = action_val
+            update_val = d["update_function"][str(node)][str(obs)]
+            if isinstance(update_val, dict):
+                update_val = {int(k): v for k, v in update_val.items()}
+            fsc.update_function[node][obs] = update_val
+    return fsc

@@ -6,6 +6,7 @@ import json
 import stormpy
 from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
 from paynt.utils.minimization import minimize_fsc_object, eliminate_unreachable_states
+from paynt.quotient.fsc import fsc_to_dict
 from . import version
 
 import paynt.utils.timer
@@ -38,25 +39,6 @@ memory_constraint = None
 generated_fsc_route = None
 export_generated_DT_FSC = None
 
-
-def fsc_to_dict(fsc):
-    """Serializes an FscFactored object to a JSON-serializable dictionary."""
-    action_function = {}
-    update_function = {}
-    for node in range(fsc.num_nodes):
-        action_function[node] = {}
-        update_function[node] = {}
-        for obs in range(fsc.num_observations):
-            action_function[node][obs] = fsc.action_function[node][obs]
-            update_function[node][obs] = fsc.update_function[node][obs]
-    return {
-        "num_nodes": fsc.num_nodes,
-        "num_observations": fsc.num_observations,
-        "action_labels": fsc.action_labels,
-        "observation_labels": fsc.observation_labels,
-        "action_function": action_function,
-        "update_function": update_function,
-    }
 
 
 
