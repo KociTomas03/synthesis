@@ -461,16 +461,30 @@ def paynt_run(
     # Export Storm FSC files (DOT + text) if requested
     if storm_control is not None and storm_control.export_fsc_storm is not None:
         storm_result = storm_control.latest_storm_result
-        storm_fsc = storm_control.saynt_fsc
         export_dir = storm_control.export_fsc_storm
         os.makedirs(export_dir, exist_ok=True)
 
+        # 1. Cutoff schedulers
         storm_control.export_storm_cutoff_schedulers(storm_result)
 
+        # 2. Raw Storm belief MC as DOT
+        dot_content = storm_result.induced_mc_from_scheduler.to_dot()
+        with open(os.path.join(export_dir, "belief_mc.dot"), "w") as f:
+            f.write(dot_content)
+        logger.info("Exported belief MC DOT")
 
-        if storm_fsc is not None:
-            storm_control.export_paynt_fsc(storm_fsc, "storm_as_fsc")
-            logger.info("Exported Storm belief FSC")
+        # 3. Merged F_B — belief controller converted to FSC (Storm MC + PAYNT FSC nodes)
+        try:
+            merged_fsc = storm_control.belief_controller_to_fsc(
+                storm_result, storm_control.latest_paynt_result_fsc
+            )
+            with open(os.path.join(export_dir, "merged_fsc.json"), "w") as f:
+                json.dump(fsc_to_dict(merged_fsc), f, indent=2)
+            with open(os.path.join(export_dir, "merged_fsc.pkl"), "wb") as f:
+                pickle.dump(merged_fsc, f)
+            logger.info(f"Exported merged F_B ({merged_fsc.num_nodes} nodes)")
+        except Exception as e:
+            logger.warning(f"Failed to export merged F_B: {e}")
 
     if storm_control is not None and export_generated_dt_fsc is not None:
         os.makedirs(export_generated_dt_fsc, exist_ok=True)
@@ -539,6 +553,8 @@ def paynt_run(
                     json.dump(fsc_to_dict(minimized_wc_fsc), f, indent=2)
                 with open(os.path.join(export_generated_dt_fsc, "minimized_wc_fsc.pkl"), "wb") as f:
                     pickle.dump(minimized_wc_fsc, f)
+                # DT conversion for the WC FSC is NOT run here — it can take tens of
+                # minutes per benchmark and is done offline via run_wc_dt_conversion.py.
         else:
             logger.warning("Storm FSC is None, skipping Storm metrics")
 
