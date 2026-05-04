@@ -5,7 +5,7 @@ Reads minimized_wc_fsc.pkl and paynt_fsc.json from each benchmark directory
 under BASE_DIR and runs dtControl on them, appending results to results.json.
 
 Run this script manually after synthesis + minimization are complete.
-WC DT conversion is not wired into the main --export-generated-dt-fsc pipeline
+WC DT conversion is not wired into the main --output-dir pipeline
 because runtimes can be very long (up to ~15 min per benchmark on large FSCs);
 BASE_DIR and WC_DT_NODE_LIMIT can be overridden at the top of this file.
 """

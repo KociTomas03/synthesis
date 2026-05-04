@@ -201,7 +201,7 @@ class TestPayntRun(unittest.TestCase):
             command = (
                 f"python3 paynt.py {project_path}"
                 f" --fsc-synthesis --storm-pomdp --iterative-storm 900 60 10"
-                f" --export-generated-dt-fsc {outputFolder}/decision_trees"
+                f" --output-dir {outputFolder}/decision_trees"
                 f" --minimize-storm-fsc"
                 f" > {output_file} 2>&1"
             )

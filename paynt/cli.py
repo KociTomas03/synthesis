@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Module-level variables that are set by the CLI and accessed by other modules
 memory_constraint = None
 generated_fsc_route = None
-export_generated_DT_FSC = None
+output_dir = None
 
 
 
@@ -320,10 +320,10 @@ def setup_logger(log_path=None):
     help="Route to save generated FSCs to",
 )
 @click.option(
-    "--export-generated-dt-fsc",
+    "--output-dir",
     type=click.Path(),
     default=None,
-    help="path to folder, where to store generated Decision Tree FSCs",
+    help="path to output folder for all synthesis artefacts (FSC pickles, DT results, metrics)",
 )
 def paynt_run(
     project,
@@ -361,7 +361,7 @@ def paynt_run(
     profiling,
     memory_constraint,
     generated_fsc_route,
-    export_generated_dt_fsc,
+    output_dir,
     verify_fsc,
     import_storm_fsc,
 ):
@@ -390,7 +390,7 @@ def paynt_run(
 
     paynt.cli.memory_constraint = memory_constraint
     paynt.cli.generated_fsc_route = generated_fsc_route
-    paynt.cli.export_generated_DT_FSC = export_generated_dt_fsc
+    paynt.cli.output_dir = output_dir
 
     paynt.quotient.mdp_family.MdpFamilyQuotient.initial_memory_size = fsc_memory_size
 
@@ -486,8 +486,8 @@ def paynt_run(
         except Exception as e:
             logger.warning(f"Failed to export merged F_B: {e}")
 
-    if storm_control is not None and export_generated_dt_fsc is not None:
-        os.makedirs(export_generated_dt_fsc, exist_ok=True)
+    if storm_control is not None and output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
         results = {}
 
         # Call belief_controller_to_fsc fresh at export time (same as old working export code)
@@ -511,9 +511,9 @@ def paynt_run(
             if storm_result is not None:
                 results["storm_fsc_size"] = storm_control.get_fsc_comparable_size(storm_fsc, storm_result)
 
-            with open(os.path.join(export_generated_dt_fsc, "storm_fsc.json"), "w") as f:
+            with open(os.path.join(output_dir, "storm_fsc.json"), "w") as f:
                 json.dump(fsc_to_dict(storm_fsc), f, indent=2)
-            with open(os.path.join(export_generated_dt_fsc, "storm_fsc.pkl"), "wb") as f:
+            with open(os.path.join(output_dir, "storm_fsc.pkl"), "wb") as f:
                 pickle.dump(storm_fsc, f)
 
             # Minimization of Storm FSC
@@ -531,9 +531,9 @@ def paynt_run(
                     f"Minimization done: {storm_fsc.num_nodes} -> {minimized_fsc.num_nodes} nodes"
                     f" in {results['minimized_time_s']}s"
                 )
-                with open(os.path.join(export_generated_dt_fsc, "minimized_fsc.json"), "w") as f:
+                with open(os.path.join(output_dir, "minimized_fsc.json"), "w") as f:
                     json.dump(fsc_to_dict(minimized_fsc), f, indent=2)
-                with open(os.path.join(export_generated_dt_fsc, "minimized_fsc.pkl"), "wb") as f:
+                with open(os.path.join(output_dir, "minimized_fsc.pkl"), "wb") as f:
                     pickle.dump(minimized_fsc, f)
 
                 # --- Paige-Tarjan + wildcard merge ---
@@ -549,9 +549,9 @@ def paynt_run(
                     f"Wildcard minimization done: {storm_fsc.num_nodes} -> {minimized_wc_fsc.num_nodes} nodes"
                     f" in {results['minimized_wc_time_s']}s"
                 )
-                with open(os.path.join(export_generated_dt_fsc, "minimized_wc_fsc.json"), "w") as f:
+                with open(os.path.join(output_dir, "minimized_wc_fsc.json"), "w") as f:
                     json.dump(fsc_to_dict(minimized_wc_fsc), f, indent=2)
-                with open(os.path.join(export_generated_dt_fsc, "minimized_wc_fsc.pkl"), "wb") as f:
+                with open(os.path.join(output_dir, "minimized_wc_fsc.pkl"), "wb") as f:
                     pickle.dump(minimized_wc_fsc, f)
                 # DT conversion for the WC FSC is NOT run here — it can take tens of
                 # minutes per benchmark and is done offline via run_wc_dt_conversion.py.
@@ -563,10 +563,10 @@ def paynt_run(
             results["paynt_value"] = storm_control.paynt_bounds
             results["paynt_fsc_size"] = storm_control.paynt_fsc_size
 
-            with open(os.path.join(export_generated_dt_fsc, "paynt_fsc.json"), "w") as f:
+            with open(os.path.join(output_dir, "paynt_fsc.json"), "w") as f:
                 json.dump(fsc_to_dict(paynt_fsc), f, indent=2)
 
-            paynt_dt_dir = os.path.join(export_generated_dt_fsc, "PAYNT")
+            paynt_dt_dir = os.path.join(output_dir, "PAYNT")
             logger.info("Running DT conversion for PAYNT FSC...")
             converter = FSCtoDTConverter(paynt_fsc, output_dir=paynt_dt_dir, is_storm=False)
             t0 = time.perf_counter()
@@ -581,7 +581,7 @@ def paynt_run(
         else:
             logger.warning("PAYNT FSC is None, skipping DT conversion")
 
-        results_path = os.path.join(export_generated_dt_fsc, "results.json")
+        results_path = os.path.join(output_dir, "results.json")
         with open(results_path, "w") as f:
             json.dump(results, f, indent=2)
         logger.info(f"Results saved to {results_path}")

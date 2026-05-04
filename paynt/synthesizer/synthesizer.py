@@ -250,10 +250,10 @@ class Synthesizer:
             logger.info(self.best_assignment)
             logger.info("Building decision trees reflecting the synthesized assignment")
             # fsc = self.quotient.assignment_to_fsc(self.best_assignment)
-            # if paynt.cli.export_generated_DT_FSC:
+            # if paynt.cli.output_dir:
             #     converter = FSCtoDTConverter(
             #         fsc,
-            #         output_dir=paynt.cli.export_generated_DT_FSC,
+            #         output_dir=paynt.cli.output_dir,
             #     )
             #     converter.run_dtcontrol()
 
@@ -263,10 +263,10 @@ class Synthesizer:
             logger.info(f"double-checking specification satisfiability: {result}")
             if self.generated_fsc_route is not None:
                 self.best_assignment.toGraph(self.generated_fsc_route)
-                if paynt.cli.export_generated_DT_FSC:
+                if paynt.cli.output_dir:
                     converter = FSCtoDTConverter(
                         self.quotient.assignment_to_fsc(self.best_assignment),
-                        output_dir=paynt.cli.export_generated_DT_FSC,
+                        output_dir=paynt.cli.output_dir,
                     )
                     converter.run_dtcontrol(parallel=False)
 
