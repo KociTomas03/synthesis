@@ -92,6 +92,30 @@ SAYNT [6] and Storm associated options (pomdp-api branch of Storm and Stormpy ar
 - ``--use-storm-cutoffs``: if enabled the actions from cut-offs are considered in the prioritization and unfolding
 - ``--export-synthesis PATH``: stores the synthesis result to speciefied PATH
 
+### Post-Synthesis Optimization
+
+After synthesis completes, two additional flags trigger optimization of the resulting FSC:
+
+- ``--output-dir PATH``: exports the inductively synthesized FSC (F_I) as decision trees into the given directory, one tree per memory node, using [dtControl](https://dtcontrol.model.in.tum.de/). A ``results.json`` summary is written alongside the trees. Requires dtControl: install the optional dependency with ``pip install ".[dt]"``.
+- ``--minimize-storm-fsc``: applies Paige-Tarjan partition refinement followed by wildcard merging to the belief-based FSC (F_B) produced by SAYNT, reducing its number of memory nodes. Statistics of the minimized FSC are appended to ``results.json``.
+
+Both flags can be combined in a single SAYNT run. The following example runs SAYNT on the maze POMDP and exports decision trees for the synthesized FSC while also minimizing the belief FSC:
+
+```shell
+python3 -m paynt models/pomdp/maze/slip --fsc-synthesis --storm-pomdp --iterative-storm 900 60 10 --minimize-storm-fsc --output-dir out/maze
+```
+
+The output directory ``out/maze`` will contain:
+
+- ``paynt_fsc.json`` / ``paynt_fsc.pkl`` — the PAYNT-synthesized F_I
+- ``PAYNT/training/node_x/`` — intermediate CSVs fed to dtControl (one per memory node)
+- ``PAYNT/default/node_x/`` — dtControl decision trees for F_I (``default`` is dtControl's preset directory name)
+- ``PAYNT/benchmark.json`` / ``PAYNT/benchmark.html`` — dtControl benchmark summary across all memory nodes
+- ``storm_fsc.json`` / ``storm_fsc.pkl`` — the raw belief-based F_B from SAYNT
+- ``minimized_fsc.json`` / ``minimized_fsc.pkl`` — F_B after Paige-Tarjan refinement
+- ``minimized_wc_fsc.json`` / ``minimized_wc_fsc.pkl`` — F_B after refinement and wildcard merging
+- ``results.json`` — FSC sizes, minimization timings, and decision tree node counts
+
 Other options:
 - ``--help``: shows the help message of the PAYNT and aborts
 - ``--export [jani|drn|pomdp]``: exports the model to *.drn/*.pomdp and aborts

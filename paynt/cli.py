@@ -552,6 +552,8 @@ def paynt_run(
 
             with open(os.path.join(output_dir, "paynt_fsc.json"), "w") as f:
                 json.dump(fsc_to_dict(paynt_fsc), f, indent=2)
+            with open(os.path.join(output_dir, "paynt_fsc.pkl"), "wb") as f:
+                pickle.dump(paynt_fsc, f)
 
             paynt_dt_dir = os.path.join(output_dir, "PAYNT")
             logger.info("Running DT conversion for PAYNT FSC...")

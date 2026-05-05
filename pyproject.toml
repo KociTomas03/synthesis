@@ -38,6 +38,9 @@ Homepage = "https://github.com/randriu/synthesis"
 "Bug Tracker" = "https://github.com/randriu/synthesis/issues"
 
 [project.optional-dependencies]
+dt = [
+    "dtcontrol==2.1.15",
+]
 numpy = [
     "numpy"
 ]

@@ -349,13 +349,13 @@ class FSCtoDTConverter:
         Saves DataFrames as CSV files and their metadata configs for a specific memory value.
         Returns paths to the created files.
         """
-        # Create directory structure
-        memory_dir = os.path.join(self.output_dir, f"memory_{memory_value}")
+        # Create directory structure — training/ holds intermediate CSVs fed to dtControl
+        memory_dir = os.path.join(self.output_dir, "training", f"node_{memory_value}")
         os.makedirs(memory_dir, exist_ok=True)
 
-        action_file = os.path.join(memory_dir, f"{memory_value}_action_data.csv")
-        memory_file = os.path.join(memory_dir, f"{memory_value}_memory_data.csv")
-        combined_file = os.path.join(memory_dir, f"{memory_value}_combined_data.csv")
+        action_file = os.path.join(memory_dir, f"node_{memory_value}_action.csv")
+        memory_file = os.path.join(memory_dir, f"node_{memory_value}_memory.csv")
+        combined_file = os.path.join(memory_dir, f"node_{memory_value}.csv")
 
         # Filter data for specific memory value
         action_df = self.get_action_dataframe()
@@ -605,8 +605,8 @@ class FSCtoDTConverter:
             shared_benchmark_file: Path to a shared benchmark file for all memories
         """
         try:
-            # Create memory-specific directory
-            memory_dir = os.path.join(output_dir, f"memory_{memory_value}")
+            # Create node-specific training directory
+            memory_dir = os.path.join(output_dir, "training", f"node_{memory_value}")
             os.makedirs(memory_dir, exist_ok=True)
 
             # Use the shared benchmark file if provided, otherwise create memory-specific one
