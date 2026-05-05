@@ -208,6 +208,7 @@ def fsc_to_dict(fsc):
     return {
         "num_nodes": fsc.num_nodes,
         "num_observations": fsc.num_observations,
+        "is_deterministic": fsc.is_deterministic,
         "action_labels": fsc.action_labels,
         "observation_labels": fsc.observation_labels,
         "action_function": action_function,
@@ -219,16 +220,9 @@ def load_fsc_from_json(path):
     """Reconstructs an FscFactored object from a fsc_to_dict JSON file."""
     with open(path) as f:
         d = json.load(f)
-    fsc = FscFactored(d["num_nodes"], d["num_observations"])
+    fsc = FscFactored(d["num_nodes"], d["num_observations"], d["is_deterministic"])
     fsc.action_labels = d.get("action_labels")
     fsc.observation_labels = d.get("observation_labels")
-    # is_deterministic is not stored in JSON — infer from action_function values
-    fsc.is_deterministic = not any(
-        isinstance(d["action_function"][str(n)][str(o)], dict)
-        for n in range(fsc.num_nodes)
-        for o in range(fsc.num_observations)
-        if d["action_function"][str(n)][str(o)] is not None
-    )
     for node in range(fsc.num_nodes):
         for obs in range(fsc.num_observations):
             action_val = d["action_function"][str(node)][str(obs)]
