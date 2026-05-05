@@ -65,6 +65,17 @@ cd - && cd stormpy
 pip install . --config-settings=cmake.define.USE_STORM_DFT=OFF --config-settings=cmake.define.USE_STORM_GSPN=OFF
 ```
 
+**Note (Python 3.12+):** `setuptools` is no longer bundled with new virtual environments in Python 3.12+, but `dtcontrol` depends on `pkg_resources` which is part of it. Installing PAYNT via `pip install .` handles this automatically. If you install dependencies manually or encounter `ModuleNotFoundError: No module named 'pkg_resources'`, run `pip install setuptools` first.
+
+**Required patch for SAYNT (OOM fix):** The belief exploration checker in stormpy holds the Python GIL during long-running C++ calls, which prevents the garbage collector from running and can cause the process to be OOM-killed on larger benchmarks. Before building stormpy, apply the following fix to `src/pomdp/quantitative_analysis.cpp` — add `py::call_guard<py::gil_scoped_release>()` to each `check` overload:
+
+```cpp
+belmc.def("check", ..., py::call_guard<py::gil_scoped_release>());
+belmc.def("check_with_preprocessing_environment", ..., py::call_guard<py::gil_scoped_release>());
+belmc.def("check_with_environment", ..., py::call_guard<py::gil_scoped_release>());
+belmc.def("check_with_environment_and_pre_processing_environment", ..., py::call_guard<py::gil_scoped_release>());
+```
+
 ## Running PAYNT
 
 PAYNT can be executed using the command in the following form:
