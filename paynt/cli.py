@@ -303,16 +303,10 @@ def setup_logger(log_path=None):
     help="maximum number of memory holes to be added to the design space",
 )
 @click.option(
-    "--verify-FSC",
-    is_flag=True,
-    default=False,
-    help="verify the FSC given by the user",
-)
-@click.option(
-    "--import-STORM-fsc",
+    "--verify-fsc",
     type=click.Path(),
     default=None,
-    help="path to the pickle file containing the STORM FSC",
+    help="path to a pickle file containing an FSC to verify",
 )
 @click.option(
     "--generated-fsc-route",
@@ -363,7 +357,6 @@ def paynt_run(
     generated_fsc_route,
     output_dir,
     verify_fsc,
-    import_storm_fsc,
 ):
 
     profiler = None
@@ -430,14 +423,8 @@ def paynt_run(
         quotient, method, fsc_synthesis, storm_control
     )
 
-    if verify_fsc:
-        if import_storm_fsc is None:
-            print("Please provide STORM FSC file to verify.")
-            return
-
-        # with open(import_paynt_fsc, "rb") as f:
-        #     paynt_fsc = pickle.load(f)
-        with open(import_storm_fsc, "rb") as f:
+    if verify_fsc is not None:
+        with open(verify_fsc, "rb") as f:
             storm_fsc = pickle.load(f)
             dtmc = quotient.get_induced_dtmc_from_fsc(storm_fsc)
             result = stormpy.model_checking(

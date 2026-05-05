@@ -5,17 +5,19 @@ import re
 import subprocess
 import os
 import json
-import multiprocessing
 import signal
 
 project_root = str(Path(__file__).resolve().parent.parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 from paynt.quotient.pomdp import PomdpQuotient
-from paynt.quotient.fsc import FscFactored as FSC
+from paynt.quotient.fsc import FscFactored
 
 
 class FSCtoDTConverter:
+    _ACTION_PATTERN = re.compile(r"A\((.+?),(\d+)\)=(\w+)")
+    _MEMORY_PATTERN = re.compile(r"M\((.+?),(\d+)\)=(\d+)")
+
     def __init__(
         self,
         fsc_input,
@@ -32,7 +34,9 @@ class FSCtoDTConverter:
             dtcontrol_path: Path to dtcontrol executable
             output_dir: Directory to save generated files
             combined_mode: If True, create a single decision tree with two outputs (action and next_memory)
-            is_storm: If True, FSC is from STORM format
+            is_storm: If True, parse as a Storm belief-policy FSC (uses _parse_storm_format
+                and storm-specific observation/action/memory label handling); if False,
+                parse as a PAYNT FSC object (uses _parse_paynt_format)
         """
         self.output_dir = output_dir
         self.dtcontrol_path = dtcontrol_path
@@ -43,7 +47,7 @@ class FSCtoDTConverter:
         self.observation_keys = set()  # To store all unique observation keys
 
         # Parse the input based on its type
-        if isinstance(fsc_input, FSC):
+        if isinstance(fsc_input, FscFactored):
             self.parse_fsc_object(fsc_input)
         else:
             # Assume it's a string
@@ -235,8 +239,6 @@ class FSCtoDTConverter:
         """
         # Implement STORM-specific parsing logic
         # This is a placeholder and will need to be adapted to STORM's format
-        action_pattern = re.compile(r"A\((.+?),(\d+)\)=(\w+)")
-        memory_pattern = re.compile(r"M\((.+?),(\d+)\)=(\d+)")
         var_pattern = re.compile(
             r"([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)=(\w+)|([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)"
         )
@@ -247,8 +249,8 @@ class FSCtoDTConverter:
 
             # Storm format specific parsing logic here
             # This is just a placeholder - adjust to match Storm's actual format
-            action_match = action_pattern.match(line)
-            memory_match = memory_pattern.match(line)
+            action_match = self._ACTION_PATTERN.match(line)
+            memory_match = self._MEMORY_PATTERN.match(line)
 
             if action_match:
                 vars_str, m, action = action_match.groups()
@@ -266,8 +268,6 @@ class FSCtoDTConverter:
         """
         Parse FSC output in PAYNT format
         """
-        action_pattern = re.compile(r"A\((.+?),(\d+)\)=(\w+)")
-        memory_pattern = re.compile(r"M\((.+?),(\d+)\)=(\d+)")
         # Updated pattern to only match valid variable names (must start with a letter)
         var_pattern = re.compile(
             r"([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)=(\w+)|([a-zA-Z][\w\d]*|![a-zA-Z][\w\d]*)"
@@ -277,8 +277,8 @@ class FSCtoDTConverter:
             # Remove quotes and whitespace
             line = line.strip(' "')
 
-            action_match = action_pattern.match(line)
-            memory_match = memory_pattern.match(line)
+            action_match = self._ACTION_PATTERN.match(line)
+            memory_match = self._MEMORY_PATTERN.match(line)
 
             if action_match:
                 vars_str, m, action = action_match.groups()
@@ -343,7 +343,6 @@ class FSCtoDTConverter:
         combined_df["action"].fillna("-", inplace=True)
         combined_df["next_memory"].fillna("-", inplace=True)
         return combined_df
-        # return pd.merge(action_df, memory_df, on=merge_columns, how="inner")
 
     def save_csv_files(self, memory_value):
         """
@@ -637,29 +636,14 @@ class FSCtoDTConverter:
             print(f"dtControl failed for memory {memory_value} with error: {e}")
             return memory_value, False
 
-    def run_dtcontrol(self, max_states=None, parallel=False, starting_memory=0):
-        """
-        Runs dtControl on the generated CSV files for each memory value.
-
-        Args:
-            max_states: Maximum number of memory states to process (None = process all)
-            parallel: Whether to use parallel processing
-        """
+    def run_dtcontrol(self):
+        """Runs dtControl on the generated CSV files for each memory value."""
         # Get unique memory values from both action and memory data
         action_df = self.get_action_dataframe()
         memory_df = self.get_memory_dataframe()
         memory_values = sorted(
             set(action_df["memory"].unique()) | set(memory_df["memory"].unique())
         )
-
-        # Filter memory values to start from the specified starting_memory
-        if starting_memory > 0:
-            memory_values = [m for m in memory_values if m >= starting_memory]
-            print(f"Starting from memory state {starting_memory}")
-
-        # Limit memory states if requested
-        if max_states is not None:
-            memory_values = memory_values[:max_states]
 
         total_states = len(memory_values)
         print(f"Processing {total_states} memory states")
@@ -672,37 +656,12 @@ class FSCtoDTConverter:
         # Ensure the output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
-        # Use parallel processing if requested
-        if parallel and len(memory_values) > 1:
-            from functools import partial
-
-            num_cores = max(1, multiprocessing.cpu_count() - 2)  # Leave two cores free
-            print(f"Using parallel processing with {num_cores} cores")
-
-            # Create a partial function with self bound to it
-            process_func = partial(
-                self._process_memory_state,
-                output_dir=output_dir,
+        for memory_value in memory_values:
+            self._process_memory_state(
+                memory_value,
+                output_dir,
                 shared_benchmark_file=shared_benchmark_file,
             )
-
-            # Run in parallel with process pool
-            with multiprocessing.Pool(num_cores) as pool:
-                results = pool.map(process_func, memory_values)
-
-            # Print summary
-            succeeded = sum(1 for _, success in results if success)
-            print(
-                f"Successfully processed {succeeded}/{len(memory_values)} memory states"
-            )
-        else:
-            # Sequential processing
-            for memory_value in memory_values:
-                self._process_memory_state(
-                    memory_value,
-                    output_dir,
-                    shared_benchmark_file=shared_benchmark_file,
-                )
 
     def _run_dtcontrol_process(self, input_file, output_dir, benchmark_file):
         """Helper method to run dtcontrol with consistent parameters."""
@@ -740,17 +699,13 @@ class FSCtoDTConverter:
             return None
 
     @staticmethod
-    def process_existing_outputs(
-        base_dir, combined_mode=False, max_states=None, parallel=False
-    ):
+    def process_existing_outputs(base_dir, combined_mode=False):
         """
         Processes existing FSC outputs in the specified base directory.
 
         Args:
             base_dir: Base directory containing the FSC outputs
             combined_mode: If True, create combined decision trees
-            max_states: Maximum number of memory states to process
-            parallel: Whether to use parallel processing
         """
         fsc_files = []
 
@@ -786,21 +741,10 @@ class FSCtoDTConverter:
                     is_storm=is_storm,
                 )
 
-                converter.run_dtcontrol(max_states=max_states, parallel=parallel)
+                converter.run_dtcontrol()
 
             except Exception as e:
                 print(f"Error processing {fsc_path}: {e}")
                 import traceback
 
                 traceback.print_exc()
-
-
-if __name__ == "__main__":
-    # Example usage:
-    # base_dir = "test_silly_tree"
-    # test = ""
-    # converter = FSCtoDTConverter(test, output_dir=base_dir, combined_mode=False)
-    # converter.run_dtcontrol()
-    pomdpQuotient = PomdpQuotient()
-    base_dir = "test_outpus_saynt"
-    FSCtoDTConverter.process_existing_outputs(base_dir, True)

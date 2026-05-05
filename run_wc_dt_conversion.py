@@ -21,6 +21,7 @@ from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
 from paynt.quotient.fsc import FscFactored, load_fsc_from_json
 
 WC_DT_NODE_LIMIT = 1000
+PAYNT_DT_NODE_LIMIT = 1000
 BASE_DIR = "benchmark_results"
 
 
@@ -74,11 +75,14 @@ def main():
         if os.path.exists(paynt_json):
             try:
                 paynt_fsc = load_fsc_from_json(paynt_json)
-                print(f"[{benchmark}] Running PAYNT two-tree DT conversion ({paynt_fsc.num_nodes} nodes)...")
-                dt_time_p, dt_nodes_p = run_conversion(paynt_fsc, os.path.join(dt_dir, "PAYNT_two_tree"), combined_mode=False, is_storm=False)
-                print(f"[{benchmark}]   PAYNT two-tree — nodes: {dt_nodes_p} | time: {dt_time_p}s")
-                results["paynt_dt_two_tree_nodes"] = dt_nodes_p
-                results["paynt_dt_two_tree_time_s"] = dt_time_p
+                if paynt_fsc.num_nodes > PAYNT_DT_NODE_LIMIT:
+                    print(f"[{benchmark}] PAYNT FSC has {paynt_fsc.num_nodes} nodes (> {PAYNT_DT_NODE_LIMIT}), skipping DT conversion.")
+                else:
+                    print(f"[{benchmark}] Running PAYNT two-tree DT conversion ({paynt_fsc.num_nodes} nodes)...")
+                    dt_time_p, dt_nodes_p = run_conversion(paynt_fsc, os.path.join(dt_dir, "PAYNT_two_tree"), combined_mode=False, is_storm=False)
+                    print(f"[{benchmark}]   PAYNT two-tree — nodes: {dt_nodes_p} | time: {dt_time_p}s")
+                    results["paynt_dt_two_tree_nodes"] = dt_nodes_p
+                    results["paynt_dt_two_tree_time_s"] = dt_time_p
             except Exception as e:
                 print(f"[{benchmark}] PAYNT DT conversion failed: {e}")
                 import traceback; traceback.print_exc()

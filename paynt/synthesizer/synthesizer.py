@@ -248,14 +248,6 @@ class Synthesizer:
         if self.best_assignment is not None:
             logger.info("printing synthesized assignment below:")
             logger.info(self.best_assignment)
-            logger.info("Building decision trees reflecting the synthesized assignment")
-            # fsc = self.quotient.assignment_to_fsc(self.best_assignment)
-            # if paynt.cli.output_dir:
-            #     converter = FSCtoDTConverter(
-            #         fsc,
-            #         output_dir=paynt.cli.output_dir,
-            #     )
-            #     converter.run_dtcontrol()
 
         if self.best_assignment is not None and self.best_assignment.size == 1:
             dtmc = self.quotient.build_assignment(self.best_assignment)
@@ -268,7 +260,7 @@ class Synthesizer:
                         self.quotient.assignment_to_fsc(self.best_assignment),
                         output_dir=paynt.cli.output_dir,
                     )
-                    converter.run_dtcontrol(parallel=False)
+                    converter.run_dtcontrol()
 
         if print_stats:
             self.stat.print()

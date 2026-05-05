@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-class TestPayntRun(unittest.TestCase):
+class BenchmarkPipeline(unittest.TestCase):
     # NOTE: most test methods begin with `return` and are intentionally disabled.
     # They invoke full SAYNT synthesis (15+ min per benchmark) or verification
     # and are meant to be run manually, not by an automated test runner.
@@ -53,7 +53,8 @@ class TestPayntRun(unittest.TestCase):
         if not os.path.exists(cls.output_dir):
             os.makedirs(cls.output_dir)
 
-    # each fsc size given and ran differently
+    # each fsc size given and ran separately - 
+    # inspecting the FSC patterns and their availability
     def test_paynt_run(self):
         return
         for project_path in self.projects:
@@ -106,8 +107,7 @@ class TestPayntRun(unittest.TestCase):
                     with open(output_file, "r") as f:
                         print("Output file content:")
                         print(f.read())
-
-    # TODO: add tests for iterative storm option (15 mins per problem)
+    # each benchmark ran with iteratively increasing memory size, whilst being constrained on memory patterns
     def test_paynt_run_iterative(self):
         return
         for project_path in self.projects:
@@ -158,7 +158,8 @@ class TestPayntRun(unittest.TestCase):
 
         pass
 
-    # TODO: add SAYNT tests (15 mins per problem)
+    # different set of benchmarks - to better reflect the SAYNT evaluation
+    # saynt runs with without memory constraints with 15-minute timeout -> results of thesis
     def test_saynt_run(self):
         return
         sayntProjects = [
@@ -226,6 +227,8 @@ class TestPayntRun(unittest.TestCase):
             #     print("Output file content:")
             #     print(f.read())
 
+    # verification of the generated FSCs (policies) - sanity check to ensure PR and WM minimizations
+    # do not degrade the quality
     def test_saynt_verify(self):
         return
         import json
@@ -285,7 +288,7 @@ class TestPayntRun(unittest.TestCase):
                 cmd = (
                     f"python3 paynt.py {project_path}"
                     f" --fsc-synthesis"
-                    f" --verify-FSC --import-STORM-fsc {pkl_path}"
+                    f" --verify-fsc {pkl_path}"
                     f" > {out_file} 2>&1"
                 )
                 r = subprocess.run(cmd, shell=True)
@@ -320,6 +323,7 @@ class TestPayntRun(unittest.TestCase):
             json.dump(all_rows, f, indent=2)
         print(f"\nSummary written to {summary_path}")
 
+    # assembling the final table for the thesis - extracting relevant values from results.json files
     def test_saynt_table(self):
         """
         Reads each benchmark's results.json (which must already contain verified values

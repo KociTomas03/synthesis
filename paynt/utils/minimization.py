@@ -1,5 +1,5 @@
 from collections import defaultdict, deque
-from paynt.quotient.fsc import FscFactored as FSC
+from paynt.quotient.fsc import FscFactored
 
 
 def minimize_fsc_object(fsc, use_wildcards=True):
@@ -39,11 +39,11 @@ def minimize_fsc_object(fsc, use_wildcards=True):
                 else:
                     actions[node][obs] = fsc.action_function[node][obs]
 
-    min_nodes, min_transitions, _, partitions = minimize_fsc_internal(
+    min_nodes, min_transitions, partitions = minimize_fsc_internal(
         fsc_nodes, observations, node_transitions, actions, use_wildcards=use_wildcards
     )
 
-    min_fsc = FSC(len(min_nodes), fsc.num_observations, fsc.is_deterministic)
+    min_fsc = FscFactored(len(min_nodes), fsc.num_observations, fsc.is_deterministic)
     node_name_to_id = {name: i for i, name in enumerate(min_nodes)}
 
     for i, node_name in enumerate(min_nodes):
@@ -116,7 +116,9 @@ def minimize_fsc_object(fsc, use_wildcards=True):
     # Find which minimized node index corresponds to original node 0 (the initial state).
     # After Paige-Tarjan, block IDs are not guaranteed to preserve this mapping —
     # the initial block may have been split and renumbered, so we must search explicitly.
-    initial_partition = next(i for i, part in enumerate(partitions) if 0 in part)
+    initial_partition = next((i for i, part in enumerate(partitions) if 0 in part), None)
+    if initial_partition is None:
+        raise ValueError("node 0 is not present in any partition; FSC may be empty")
 
     return min_fsc, partitions, initial_partition
 
@@ -154,7 +156,7 @@ def eliminate_unreachable_states(fsc, initial_state=0):
         reachable = [initial_state] + reachable
     node_mapping = {old: new for new, old in enumerate(reachable)}
 
-    new_fsc = FSC(len(reachable), fsc.num_observations, fsc.is_deterministic)
+    new_fsc = FscFactored(len(reachable), fsc.num_observations, fsc.is_deterministic)
     for new_idx, old_idx in enumerate(reachable):
         for obs in observations:
             new_fsc.action_function[new_idx][obs] = fsc.action_function[old_idx][obs]
@@ -175,7 +177,7 @@ def eliminate_unreachable_states(fsc, initial_state=0):
 
 def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions, use_wildcards=True):
     if not fsc_nodes:
-        return list(fsc_nodes), node_transitions, actions, []
+        return list(fsc_nodes), node_transitions, []
 
     blocks, block_of, block_counter = _initial_partition(fsc_nodes, observations, actions)
     inverse = _build_inverse(fsc_nodes, observations, node_transitions)
@@ -195,7 +197,7 @@ def minimize_fsc_internal(fsc_nodes, observations, node_transitions, actions, us
             for node in group:
                 block_of[node] = i
 
-    return _build_quotient(blocks, block_of, observations, node_transitions, actions)
+    return _build_quotient(blocks, block_of, observations, node_transitions)
 
 
 def _build_inverse(fsc_nodes, observations, node_transitions):
@@ -321,12 +323,11 @@ def _refine(blocks, block_of, block_counter, inverse, node_transitions, observat
     return blocks, block_of
 
 
-def _build_quotient(blocks, block_of, observations, node_transitions, actions):
+def _build_quotient(blocks, block_of, observations, node_transitions):
     block_ids = sorted(blocks.keys())
     new_id = {b: i for i, b in enumerate(block_ids)}
     minimized_nodes = [f"n{i}" for i in range(len(block_ids))]
 
-    minimized_actions = {}
     minimized_transitions = {}
     partitions = []
 
@@ -336,11 +337,9 @@ def _build_quotient(blocks, block_of, observations, node_transitions, actions):
         node_name = f"n{i}"
         rep = next(iter(nodes))
 
-        minimized_actions[node_name] = {}
         minimized_transitions[node_name] = {}
 
         for obs in observations:
-            minimized_actions[node_name][obs] = actions[rep][obs]
             succ = node_transitions[rep][obs]
             if succ is None:
                 minimized_transitions[node_name][obs] = None
@@ -354,7 +353,7 @@ def _build_quotient(blocks, block_of, observations, node_transitions, actions):
 
         partitions.append(list(nodes))
 
-    return minimized_nodes, minimized_transitions, minimized_actions, partitions
+    return minimized_nodes, minimized_transitions, partitions
 
 
 def merge_partitions_with_wildcards(partitions, node_transitions, actions, observations):
