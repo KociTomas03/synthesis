@@ -93,8 +93,8 @@ class Synthesizer:
         self.explored = None
         self.best_assignment = None
         self.best_assignment_value = None
-        # deciding upon memory constraint
         self.generated_fsc_route = paynt.cli.generated_fsc_route
+        # deciding upon memory constraint
         self.memory_constraintfunc = None
         memory_constraint = paynt.cli.memory_constraint
         if memory_constraint is not None:
@@ -295,7 +295,7 @@ class Synthesizer:
         # onto something
         return restricted_family
 
-
+################################# memory constraint functions author: Tomáš Kocí ############################
 def get_current_memory(name):
     return int(re.findall(r"[AM]{1,2}\(.*,(\d+)\)", name)[0])
 

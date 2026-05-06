@@ -1,3 +1,8 @@
+# author: Tomáš Kocí
+# This module implements Paige-Tarjan partition refinement to minimize finite state controllers (FSCs).
+# With initial partitioning based on action signatures inspired by Kanellakis and Smolka
+# and an optional second phase that merges partitions with disjoint signatures 
+
 from collections import defaultdict, deque
 from paynt.quotient.fsc import FscFactored
 

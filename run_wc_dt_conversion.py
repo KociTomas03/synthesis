@@ -1,7 +1,12 @@
+# author: Tomáš Kocí
+# file is not wired into the main pipeline and is not discussed within thesis
+# This file is solely for prototyping and running offline WC DT conversion on existing benchmark outputs
+# which is then explored in future work - currently as the merging is greedy - no structure is to be exploted by DT transformation
+
 """
 Offline WC DT conversion for existing benchmark outputs.
 
-Reads minimized_wc_fsc.pkl and paynt_fsc.json from each benchmark directory
+Reads minimized_wc_fsc.pkl and paynt_fsc.pkl from each benchmark directory
 under BASE_DIR and runs dtControl on them, appending results to results.json.
 
 Run this script manually after synthesis + minimization are complete.
@@ -18,7 +23,6 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 
 from paynt.utils.FSCtoDTConverter import FSCtoDTConverter
-from paynt.quotient.fsc import FscFactored, load_fsc_from_json
 
 WC_DT_NODE_LIMIT = 1000
 PAYNT_DT_NODE_LIMIT = 1000
@@ -71,10 +75,11 @@ def main():
                     import traceback; traceback.print_exc()
 
         # --- PAYNT FSC: two-tree ---
-        paynt_json = os.path.join(dt_dir, "paynt_fsc.json")
-        if os.path.exists(paynt_json):
+        paynt_pkl = os.path.join(dt_dir, "paynt_fsc.pkl")
+        if os.path.exists(paynt_pkl):
             try:
-                paynt_fsc = load_fsc_from_json(paynt_json)
+                with open(paynt_pkl, "rb") as f:
+                    paynt_fsc = pickle.load(f)
                 if paynt_fsc.num_nodes > PAYNT_DT_NODE_LIMIT:
                     print(f"[{benchmark}] PAYNT FSC has {paynt_fsc.num_nodes} nodes (> {PAYNT_DT_NODE_LIMIT}), skipping DT conversion.")
                 else:

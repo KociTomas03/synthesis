@@ -1,3 +1,7 @@
+# author: Tomáš Kocí
+# This module implements the DT conversion logic for FSCs, including parsing FSC outputs,
+# creating training data for dtControl, and running dtControl to generate decision trees.
+
 from pathlib import Path
 import sys
 import pandas as pd
@@ -5,7 +9,6 @@ import re
 import subprocess
 import os
 import json
-import signal
 
 project_root = str(Path(__file__).resolve().parent.parent.parent)
 if project_root not in sys.path:

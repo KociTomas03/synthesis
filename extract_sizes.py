@@ -1,3 +1,6 @@
+# author: Tomáš Kocí
+# this script extracts the number of states, actions, and observations from benchmark POMDP models used in the thesis
+
 import stormpy
 import stormpy.pomdp
 import os

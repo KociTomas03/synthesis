@@ -319,6 +319,12 @@ def setup_logger(log_path=None):
     default=None,
     help="path to output folder for all synthesis artefacts (FSC pickles, DT results, metrics)",
 )
+@click.option(
+    "--dt-conversion",
+    is_flag=True,
+    default=False,
+    help="run dtControl decision tree conversion for the PAYNT FSC (requires --output-dir)",
+)
 def paynt_run(
     project,
     sketch,
@@ -357,6 +363,7 @@ def paynt_run(
     generated_fsc_route,
     output_dir,
     verify_fsc,
+    dt_conversion,
 ):
 
     profiler = None
@@ -423,6 +430,8 @@ def paynt_run(
         quotient, method, fsc_synthesis, storm_control
     )
 
+
+################################# author(start of section): Tomáš Kocí ###################################################
     if verify_fsc is not None:
         with open(verify_fsc, "rb") as f:
             storm_fsc = pickle.load(f)
@@ -555,18 +564,19 @@ def paynt_run(
             with open(os.path.join(output_dir, "paynt_fsc.pkl"), "wb") as f:
                 pickle.dump(paynt_fsc, f)
 
-            paynt_dt_dir = os.path.join(output_dir, "PAYNT")
-            logger.info("Running DT conversion for PAYNT FSC...")
-            converter = FSCtoDTConverter(paynt_fsc, output_dir=paynt_dt_dir, is_storm=False)
-            t0 = time.perf_counter()
-            converter.run_dtcontrol()
-            results["paynt_dt_conversion_time_s"] = round(time.perf_counter() - t0, 4)
-            benchmark_path = os.path.join(paynt_dt_dir, "benchmark.json")
-            results["paynt_dt_nodes"] = FSCtoDTConverter.count_dt_nodes(benchmark_path)
-            logger.info(
-                f"DT conversion done in {results['paynt_dt_conversion_time_s']}s,"
-                f" DT nodes: {results['paynt_dt_nodes']}"
-            )
+            if dt_conversion:
+                paynt_dt_dir = os.path.join(output_dir, "PAYNT")
+                logger.info("Running DT conversion for PAYNT FSC...")
+                converter = FSCtoDTConverter(paynt_fsc, output_dir=paynt_dt_dir, is_storm=False)
+                t0 = time.perf_counter()
+                converter.run_dtcontrol()
+                results["paynt_dt_conversion_time_s"] = round(time.perf_counter() - t0, 4)
+                benchmark_path = os.path.join(paynt_dt_dir, "benchmark.json")
+                results["paynt_dt_nodes"] = FSCtoDTConverter.count_dt_nodes(benchmark_path)
+                logger.info(
+                    f"DT conversion done in {results['paynt_dt_conversion_time_s']}s,"
+                    f" DT nodes: {results['paynt_dt_nodes']}"
+                )
         else:
             logger.warning("PAYNT FSC is None, skipping DT conversion")
 
@@ -574,7 +584,7 @@ def paynt_run(
         with open(results_path, "w") as f:
             json.dump(results, f, indent=2)
         logger.info(f"Results saved to {results_path}")
-
+################################# author(end of section): Tomáš Kocí ###################################################
     if profiling:
         profiler.disable()
         print_profiler_stats(profiler)
