@@ -165,7 +165,6 @@ class BenchmarkPipeline(unittest.TestCase):
     # different set of benchmarks - to better reflect the SAYNT evaluation
     # saynt runs with without memory constraints with 15-minute timeout -> results of thesis
     def test_saynt_run(self):
-        return
         sayntProjects = [
             "models/archive/cav23-saynt/drone-4-1",
             "models/archive/cav23-saynt/drone-4-2",
@@ -191,13 +190,6 @@ class BenchmarkPipeline(unittest.TestCase):
             # Create the directory structure if it doesn't exist
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-
-            # Skip the test if the output file already exists
-            # if os.path.exists(output_file):
-            #     print(
-            #         f"Skipping existing result for project {project_path}, STORM_ITERATIVE, memory_constraint {memory_constraint}"
-            #     )
-            #     continue
 
             print(
                 f"Starting paynt_run test for project {project_path}, STORM_ITERATIVE"
@@ -226,15 +218,9 @@ class BenchmarkPipeline(unittest.TestCase):
 
             print("Finished saynt_run test")
 
-            # Print the content of the output file for debugging
-            # with open(output_file, "r") as f:
-            #     print("Output file content:")
-            #     print(f.read())
-
     # verification of the generated FSCs (policies) - sanity check to ensure PR and WM minimizations
     # do not degrade the quality
     def test_saynt_verify(self):
-        return
         import json
         import re
 
@@ -328,7 +314,8 @@ class BenchmarkPipeline(unittest.TestCase):
         print(f"\nSummary written to {summary_path}")
 
     # assembling the final table for the thesis - extracting relevant values from results.json files
-    def test_saynt_table(self):
+    # 'z' added to name for unittest's run - it runs all test methods in alphabetical order and this should be only after verification
+    def test_saynt_z_table(self):
         """
         Reads each benchmark's results.json (which must already contain verified values
         written by test_saynt_verify) and assembles a single table_data.json with all

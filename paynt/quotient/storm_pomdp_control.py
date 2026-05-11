@@ -966,6 +966,7 @@ class StormPOMDPControl:
 
         return result_size
 
+####################################### Size computation utilities for FSC and belief MC controllers Author: Tomáš Kocí #######################################
     def get_fsc_comparable_size(self, fsc, storm_result):
         # Computes a size metric for an FSC object directly, comparable between
         # the original and minimized Storm FSC.
@@ -1059,6 +1060,7 @@ class StormPOMDPControl:
 
         logger.info(f"Exported {len(used_schedulers)} schedulers to {self.export_fsc_storm}")
 
+########################################### Visualization utilities for Storm schedulers and PAYNT FSCs Author: Tomáš Kocí ###########################################
     def export_paynt_fsc(self, fsc, filename="paynt"):
         """
         Exports a PAYNT FSC to text file and PDF visualization.

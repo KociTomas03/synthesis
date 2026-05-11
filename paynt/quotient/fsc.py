@@ -194,7 +194,7 @@ class FscFactored:
 #for backward compatibility
 FSC=FscFactored
 
-
+####################################### Serialization utilities for FscFactored objects Author: Tomáš Kocí #######################################
 def fsc_to_dict(fsc):
     """Serializes an FscFactored object to a JSON-serializable dictionary."""
     action_function = {}

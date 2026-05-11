@@ -37,22 +37,7 @@ cd ../..
 
 ---
 
-## 3. Apply the stormpy GIL patch (required for SAYNT)
-
-The belief exploration checker in stormpy holds the Python GIL during long C++ calls, which prevents garbage collection and causes OOM kills on larger benchmarks. Before building stormpy, patch `stormpy/src/pomdp/quantitative_analysis.cpp` — add `py::call_guard<py::gil_scoped_release>()` to each of the four `check` overloads:
-
-```cpp
-belmc.def("check", ..., py::call_guard<py::gil_scoped_release>());
-belmc.def("check_with_preprocessing_environment", ..., py::call_guard<py::gil_scoped_release>());
-belmc.def("check_with_environment", ..., py::call_guard<py::gil_scoped_release>());
-belmc.def("check_with_environment_and_pre_processing_environment", ..., py::call_guard<py::gil_scoped_release>());
-```
-
-The patched file is included in this repository at [`patches/stormpy_quantitative_analysis.cpp`](patches/stormpy_quantitative_analysis.cpp).
-
----
-
-## 4. Build stormpy
+## 3. Build stormpy
 
 ```shell
 cd prerequisites
@@ -69,7 +54,7 @@ cd ../..
 
 ---
 
-## 5. Install PAYNT
+## 4. Install PAYNT
 
 With stormpy already in your environment, install PAYNT without rebuilding Storm:
 
@@ -88,7 +73,7 @@ pip install .
 
 ---
 
-## 6. Verify the installation
+## 5. Verify the installation
 
 ```shell
 python3 -m paynt --help
